@@ -470,22 +470,22 @@ class MainWindow(QMainWindow):
             self._update_recent_projects_menu()
 
             # 尝试加载最近的项目
-            last_project = self.project_cache.get_last_project()
-            if last_project:
-                project_id = last_project.get("project_id")
-                project_name = last_project.get("project_name", "")
+            # last_project = self.project_cache.get_last_project()
+            # if last_project:
+                # project_id = last_project.get("project_id")
+                # project_name = last_project.get("project_name", "")
 
-                if project_id:
-                    self.current_project_id = project_id
-                    display_name = f"{project_name} ({project_id})" if project_name else project_id
-                    self.project_label.setText(f"项目: {display_name}")
-                    self._load_merge_requests()
-                    self.status_bar.showMessage(f"已自动加载最近项目: {display_name}")
-            elif settings.gitlab.default_project_id:
+                # if project_id:
+                    # self.current_project_id = project_id
+                    # display_name = f"{project_name} ({project_id})" if project_name else project_id
+                    # self.project_label.setText(f"项目: {display_name}")
+                    # self._load_merge_requests()
+                    # self.status_bar.showMessage(f"已自动加载最近项目: {display_name}")
+            # elif settings.gitlab.default_project_id:
                 # 如果没有最近项目，使用默认项目
-                self.current_project_id = settings.gitlab.default_project_id
-                self.project_label.setText(f"项目: {self.current_project_id}")
-                self._load_merge_requests()
+                # self.current_project_id = settings.gitlab.default_project_id
+                # self.project_label.setText(f"项目: {self.current_project_id}")
+                # self._load_merge_requests()
 
             # 启用自动刷新
             if settings.app.auto_refresh.enabled:
