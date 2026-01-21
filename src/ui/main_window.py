@@ -117,13 +117,13 @@ class AIReviewWorker(QObject):
             all_issues = []
 
             for issue in result.critical_issues:
-                all_issues.append(("严重", issue))
+                all_issues.append(("issue", issue))
 
             for warning in result.warnings:
-                all_issues.append(("警告", warning))
+                all_issues.append(("warning", warning))
 
             for suggestion in result.suggestions:
-                all_issues.append(("建议", suggestion))
+                all_issues.append(("suggestion", suggestion))
 
             # 为每个问题创建一条评论（如果没有具体行号，放在第一个文件）
             if all_issues and self.diff_files:
@@ -132,7 +132,7 @@ class AIReviewWorker(QObject):
                     comments.append({
                         "file_path": default_file,
                         "line_number": 1,  # 默认第一行
-                        "content": f"**{severity}**: {description}",
+                        "content": f"**{severity}:** {description}",
                     })
 
         return comments
