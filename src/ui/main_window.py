@@ -14,7 +14,6 @@ from PyQt6.QtWidgets import (
     QMenu,
     QToolBar,
     QMessageBox,
-    QInputDialog,
     QDialog,
     QFormLayout,
     QLineEdit,
@@ -23,6 +22,8 @@ from PyQt6.QtWidgets import (
     QLabel,
     QStatusBar,
     QProgressDialog,
+    QComboBox,
+    QScrollArea,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QThread, QObject, QEvent
 from PyQt6.QtGui import QAction, QIcon, QKeySequence
@@ -214,6 +215,160 @@ class ConfigDialog(QDialog):
             "openai_key": self.openai_key_input.text() if hasattr(self, 'openai_key_input') else "",
             "openai_model": self.openai_model_input.text() if hasattr(self, 'openai_model_input') else "",
         }
+
+
+class ProjectSelectDialog(QDialog):
+    """项目选择对话框 - 使用下拉框选择项目"""
+
+    def __init__(self, gitlab_client, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.gitlab_client = gitlab_client
+        self.selected_project = None
+        self.projects = []
+        self._setup_ui()
+        self._load_projects()
+
+    def _setup_ui(self):
+        """设置UI"""
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+
+        # 标题和说明
+        title_label = QLabel("选择项目")
+        title_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+        layout.addWidget(title_label)
+
+        desc_label = QLabel("请从下拉列表中选择一个项目:")
+        layout.addWidget(desc_label)
+
+        # 搜索框
+        search_layout = QHBoxLayout()
+        search_layout.addWidget(QLabel("搜索:"))
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("输入项目名称或路径进行筛选...")
+        self.search_input.textChanged.connect(self._on_search_changed)
+        search_layout.addWidget(self.search_input)
+        layout.addLayout(search_layout)
+
+        # 项目下拉框
+        self.project_combo = QComboBox()
+        self.project_combo.setMinimumWidth(400)
+        self.project_combo.currentIndexChanged.connect(self._on_project_changed)
+        layout.addWidget(self.project_combo)
+
+        # 项目详情区域
+        self.details_label = QLabel()
+        self.details_label.setWordWrap(True)
+        self.details_label.setStyleSheet("color: #666; padding: 8px; background: #f5f5f5; border-radius: 4px;")
+        layout.addWidget(self.details_label)
+
+        layout.addStretch()
+
+        # 按钮
+        buttons = QHBoxLayout()
+        buttons.addStretch()
+        self.ok_btn = QPushButton("确定")
+        self.ok_btn.clicked.connect(self.accept)
+        self.ok_btn.setEnabled(False)
+        cancel_btn = QPushButton("取消")
+        cancel_btn.clicked.connect(self.reject)
+        buttons.addWidget(self.ok_btn)
+        buttons.addWidget(cancel_btn)
+        layout.addLayout(buttons)
+
+        self.setMinimumWidth(500)
+        self.setMinimumHeight(300)
+
+    def _load_projects(self):
+        """加载项目列表"""
+        try:
+            self.project_combo.addItem("正在加载项目...")
+            self.project_combo.setEnabled(False)
+
+            # 获取所有项目（用户成员的项目）
+            self.projects = self.gitlab_client.list_projects(
+                membership=True,
+                per_page=100,
+            )
+
+            # 清空并重新填充下拉框
+            self.project_combo.clear()
+            self.project_combo.setEnabled(True)
+
+            if not self.projects:
+                self.project_combo.addItem("暂无可用项目")
+                self.project_combo.setEnabled(False)
+                self.details_label.setText("未找到您可以访问的项目。")
+            else:
+                self.project_combo.addItem("-- 请选择项目 --")
+                for project in self.projects:
+                    # 显示格式: 项目名称 (路径)
+                    display_text = f"{project.name} ({project.path_with_namespace})"
+                    self.project_combo.addItem(display_text, project)
+
+                self.project_combo.setCurrentIndex(0)
+                self.details_label.setText(f"共找到 {len(self.projects)} 个项目")
+
+        except Exception as e:
+            self.project_combo.clear()
+            self.project_combo.addItem("加载失败")
+            self.project_combo.setEnabled(False)
+            self.details_label.setText(f"加载项目列表失败: {e}")
+
+    def _on_project_changed(self, index: int):
+        """当项目选择改变时"""
+        if index <= 0 or not self.projects:
+            self.selected_project = None
+            self.ok_btn.setEnabled(False)
+            self.details_label.setText("请选择一个项目")
+            return
+
+        project = self.project_combo.currentData()
+        if project:
+            self.selected_project = project
+            self.ok_btn.setEnabled(True)
+            # 显示项目详情
+            details = f"<b>{project.name}</b><br>"
+            details += f"路径: {project.path_with_namespace}<br>"
+            details += f"ID: {project.id}<br>"
+            if project.description:
+                details += f"描述: {project.description}"
+            self.details_label.setText(details)
+
+    def _on_search_changed(self, text: str):
+        """当搜索文本改变时"""
+        search_text = text.lower().strip()
+        current_project = self.project_combo.currentData()
+
+        self.project_combo.clear()
+
+        if not self.projects:
+            return
+
+        # 过滤项目
+        filtered_projects = []
+        for project in self.projects:
+            if (search_text in project.name.lower() or
+                search_text in project.path_with_namespace.lower()):
+                filtered_projects.append(project)
+
+        self.project_combo.addItem("-- 请选择项目 --")
+        for project in filtered_projects:
+            display_text = f"{project.name} ({project.path_with_namespace})"
+            self.project_combo.addItem(display_text, project)
+
+        # 尝试恢复之前的选择
+        if current_project:
+            for i in range(1, self.project_combo.count()):
+                if self.project_combo.itemData(i) and self.project_combo.itemData(i).id == current_project.id:
+                    self.project_combo.setCurrentIndex(i)
+                    break
+        else:
+            self.project_combo.setCurrentIndex(0)
+
+    def get_selected_project(self):
+        """获取选中的项目"""
+        return self.selected_project
 
 
 class MainWindow(QMainWindow):
@@ -550,27 +705,23 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "未连接", "请先连接到GitLab")
             return
 
-        project_id, ok = QInputDialog.getText(
-            self,
-            "选择项目",
-            "请输入项目ID或路径:\n(如: 123 或 group/project)",
-            text=settings.gitlab.default_project_id or "",
-        )
+        dialog = ProjectSelectDialog(self.gitlab_client, self)
+        if dialog.exec():
+            selected_project = dialog.get_selected_project()
+            if selected_project:
+                self.current_project_id = str(selected_project.id)
+                project_name = selected_project.path_with_namespace
+                display_name = f"{selected_project.name} ({selected_project.id})"
+                self.project_label.setText(f"项目: {display_name}")
 
-        if ok and project_id:
-            self.current_project_id = project_id
-            self.project_label.setText(f"项目: {project_id}")
+                # 保存到最近项目缓存
+                self.project_cache.add_recent_project(self.current_project_id, project_name)
 
-            # 保存到最近项目缓存
-            # 尝试获取项目名称
-            project_info = self.gitlab_client.get_project(project_id)
-            project_name = project_info.path_with_namespace if project_info else ""
-            self.project_cache.add_recent_project(project_id, project_name)
+                # 更新最近项目菜单
+                self._update_recent_projects_menu()
 
-            # 更新最近项目菜单
-            self._update_recent_projects_menu()
-
-            self._load_merge_requests()
+                # 加载MR列表
+                self._load_merge_requests()
 
     def _update_recent_projects_menu(self):
         """更新最近项目菜单"""
