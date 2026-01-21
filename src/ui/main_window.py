@@ -1,5 +1,6 @@
 """主窗口 - 应用程序主界面"""
 
+import asyncio
 import logging
 from typing import Optional
 from PyQt6.QtWidgets import (
@@ -22,18 +23,119 @@ from PyQt6.QtWidgets import (
     QStatusBar,
     QProgressDialog,
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QThread, QObject
 from PyQt6.QtGui import QAction, QIcon, QKeySequence
 
 from ..core.config import settings
 from ..core.database import DatabaseManager
 from ..gitlab.client import GitLabClient
 from ..gitlab.models import MergeRequestInfo, DiffFile, MRState
+from ..ai.reviewer import create_reviewer, ReviewIssue
 from .mr_list_widget import MRListWidget
 from .diff_viewer import DiffViewerPanel
 from .comment_panel import CommentPanel
 
 logger = logging.getLogger(__name__)
+
+
+class AIReviewWorker(QObject):
+    """AI审查工作线程"""
+
+    # 信号：审查完成、审查失败
+    review_completed = pyqtSignal(list)  # ai_comments
+    review_failed = pyqtSignal(str)  # error_message
+
+    def __init__(self, mr, diff_files, review_config):
+        super().__init__()
+        self.mr = mr
+        self.diff_files = diff_files
+        self.review_config = review_config
+
+    def run_review(self):
+        """执行AI审查（在子线程中运行）"""
+        try:
+            # 创建AI审查器
+            provider = self.review_config.get("provider", "openai")
+            reviewer_kwargs = {
+                "temperature": self.review_config.get("temperature", 0.3),
+                "max_tokens": self.review_config.get("max_tokens", 2000),
+            }
+
+            if provider == "openai":
+                reviewer_kwargs.update({
+                    "api_key": self.review_config.get("api_key", ""),
+                    "model": self.review_config.get("model", "gpt-3.5-turbo"),
+                    "base_url": self.review_config.get("base_url"),
+                })
+            elif provider == "ollama":
+                reviewer_kwargs.update({
+                    "base_url": self.review_config.get("base_url", "http://localhost:11434"),
+                    "model": self.review_config.get("model", "codellama"),
+                })
+
+            reviewer = create_reviewer(provider, **reviewer_kwargs)
+
+            # 执行审查
+            review_rules = self.review_config.get("review_rules", [])
+            result = reviewer.review_merge_request(
+                mr=self.mr,
+                diff_files=self.diff_files,
+                review_rules=review_rules,
+                quick_mode=False,
+            )
+
+            # 将AIReviewResult转换为评论列表
+            ai_comments = self._convert_result_to_comments(result)
+            self.review_completed.emit(ai_comments)
+
+        except Exception as e:
+            logger.error(f"AI审查失败: {e}", exc_info=True)
+            self.review_failed.emit(str(e))
+
+    def _convert_result_to_comments(self, result) -> list:
+        """将AIReviewResult转换为评论列表"""
+        comments = []
+
+        # 从file_reviews中提取评论
+        for file_path, file_review_list in result.file_reviews.items():
+            if isinstance(file_review_list, list):
+                for review_item in file_review_list:
+                    if isinstance(review_item, dict):
+                        line_number = review_item.get("line_number")
+                        description = review_item.get("description", "")
+
+                        if line_number and description:
+                            comments.append({
+                                "file_path": file_path,
+                                "line_number": line_number,
+                                "content": f"**AI代码审查**\n\n{description}",
+                            })
+
+        # 如果没有file_reviews，从critical_issues/warnings/suggestions提取
+        if not comments:
+            # 合并所有问题
+            all_issues = []
+
+            for issue in result.critical_issues:
+                all_issues.append(("严重", issue))
+
+            for warning in result.warnings:
+                all_issues.append(("警告", warning))
+
+            for suggestion in result.suggestions:
+                all_issues.append(("建议", suggestion))
+
+            # 为每个问题创建一条评论（如果没有具体行号，放在第一个文件）
+            if all_issues and self.diff_files:
+                default_file = self.diff_files[0].get_display_path()
+                for severity, description in all_issues[:10]:  # 限制最多10条
+                    comments.append({
+                        "file_path": default_file,
+                        "line_number": 1,  # 默认第一行
+                        "content": f"**AI代码审查 - {severity}**\n\n{description}",
+                    })
+
+        return comments
 
 
 class ConfigDialog(QDialog):
@@ -105,6 +207,10 @@ class MainWindow(QMainWindow):
         self.gitlab_client: Optional[GitLabClient] = None
         self.db_manager: Optional[DatabaseManager] = None
         self.ai_reviewer = None
+
+        # AI审查线程
+        self.ai_review_thread: Optional[QThread] = None
+        self.ai_review_worker: Optional[AIReviewWorker] = None
 
         # 当前状态
         self.current_project_id: Optional[str] = None
@@ -263,6 +369,7 @@ class MainWindow(QMainWindow):
         self.comment_panel = CommentPanel()
         self.comment_panel.setMinimumWidth(350)
         self.comment_panel.publish_comment_requested.connect(self._on_publish_comment)
+        self.comment_panel.ai_review_requested.connect(self._on_ai_review)
         splitter.addWidget(self.comment_panel)
 
         # 设置分割器比例
@@ -401,8 +508,9 @@ class MainWindow(QMainWindow):
             # 显示diff
             self.diff_viewer.load_diffs(self.current_diff_files)
 
-            # 清空评论面板
+            # 清空评论面板并传递diff文件
             self.comment_panel._on_clear()
+            self.comment_panel.set_diff_files(self.current_diff_files)
 
             self.status_bar.showMessage(f"已加载MR !{mr.iid} - {mr.title}")
 
@@ -485,10 +593,98 @@ class MainWindow(QMainWindow):
         if self.auto_refresh_timer.isActive():
             self.auto_refresh_timer.stop()
 
-        # 等待审查线程结束
-        if hasattr(self.review_panel, 'review_thread') and self.review_panel.review_thread:
-            if self.review_panel.review_thread.isRunning():
-                self.review_panel.review_thread.quit()
-                self.review_panel.review_thread.wait()
+        # 等待AI审查线程结束
+        if self.ai_review_thread and self.ai_review_thread.isRunning():
+            self.ai_review_thread.quit()
+            self.ai_review_thread.wait()
 
         event.accept()
+
+    def _on_ai_review(self):
+        """处理AI审查请求"""
+        if not self.current_mr:
+            QMessageBox.warning(self, "提示", "请先选择一个Merge Request")
+            return
+
+        if not self.current_diff_files:
+            QMessageBox.warning(self, "提示", "没有可审查的代码变更")
+            return
+
+        # 检查AI配置
+        provider = settings.ai.provider
+        if provider == "openai" and not settings.ai.openai.api_key:
+            QMessageBox.warning(
+                self,
+                "配置错误",
+                "请先配置OpenAI API Key\n\n可以在配置中设置或使用.env文件配置OPENAI_API_KEY"
+            )
+            return
+
+        if provider == "ollama":
+            # Ollama可以继续，因为它使用本地服务
+            pass
+
+        try:
+            # 停止之前的审查线程
+            if self.ai_review_thread and self.ai_review_thread.isRunning():
+                self.ai_review_thread.quit()
+                self.ai_review_thread.wait()
+
+            # 准备审查配置
+            review_config = {
+                "provider": provider,
+                "temperature": settings.ai.openai.temperature if provider == "openai" else 0.3,
+                "max_tokens": settings.ai.openai.max_tokens if provider == "openai" else 2000,
+                "review_rules": settings.ai.review_rules,
+            }
+
+            if provider == "openai":
+                review_config.update({
+                    "api_key": settings.ai.openai.api_key,
+                    "model": settings.ai.openai.model,
+                    "base_url": settings.ai.openai.base_url,
+                })
+            elif provider == "ollama":
+                review_config.update({
+                    "base_url": settings.ai.ollama.base_url,
+                    "model": settings.ai.ollama.model,
+                })
+
+            # 创建工作线程
+            self.ai_review_thread = QThread()
+            self.ai_review_worker = AIReviewWorker(
+                self.current_mr,
+                self.current_diff_files,
+                review_config
+            )
+            self.ai_review_worker.moveToThread(self.ai_review_thread)
+
+            # 连接信号
+            self.ai_review_thread.started.connect(self.ai_review_worker.run_review)
+            self.ai_review_worker.review_completed.connect(self._on_ai_review_completed)
+            self.ai_review_worker.review_failed.connect(self._on_ai_review_failed)
+            self.ai_review_worker.review_completed.connect(self.ai_review_thread.quit)
+            self.ai_review_worker.review_failed.connect(self.ai_review_thread.quit)
+
+            # 更新状态
+            self.status_bar.showMessage("正在进行AI审查...")
+            self.comment_panel.ai_review_btn.setEnabled(False)
+            self.comment_panel.ai_review_btn.setText("AI审查中...")
+
+            # 启动线程
+            self.ai_review_thread.start()
+
+        except Exception as e:
+            logger.error(f"启动AI审查失败: {e}", exc_info=True)
+            self.comment_panel.on_ai_review_error(str(e))
+            self.status_bar.showMessage("AI审查失败")
+
+    def _on_ai_review_completed(self, ai_comments: list):
+        """AI审查完成回调"""
+        self.comment_panel.on_ai_review_complete(ai_comments)
+        self.status_bar.showMessage(f"AI审查完成，生成 {len(ai_comments)} 条评论")
+
+    def _on_ai_review_failed(self, error_msg: str):
+        """AI审查失败回调"""
+        self.comment_panel.on_ai_review_error(error_msg)
+        self.status_bar.showMessage("AI审查失败")

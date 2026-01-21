@@ -179,6 +179,8 @@ class CommentPanel(QWidget):
 
     # 信号：发布评论到GitLab
     publish_comment_requested = pyqtSignal(str, str, int, str)  # (file_path, content, line, line_type)
+    # 信号：请求AI审查
+    ai_review_requested = pyqtSignal()  # 无参数，审查当前MR的diff
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -193,6 +195,9 @@ class CommentPanel(QWidget):
 
         # 当前正在编辑的评论索引（None表示新建评论）
         self._editing_index: Optional[int] = None
+
+        # 当前MR的diff文件（用于AI审查）
+        self.current_diff_files: list = []
 
         self._setup_ui()
 
@@ -244,6 +249,31 @@ class CommentPanel(QWidget):
         layout.addWidget(title)
 
         layout.addStretch()
+
+        # AI 评论按钮
+        self.ai_review_btn = QPushButton("AI 评论")
+        self.ai_review_btn.setMaximumWidth(80)
+        self.ai_review_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #7c4dff;
+                color: white;
+                border: none;
+                padding: 4px 12px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #6200ea;
+            }
+            QPushButton:pressed {
+                background-color: #5200cc;
+            }
+            QPushButton:disabled {
+                background-color: #b0a0ff;
+            }
+        """)
+        self.ai_review_btn.clicked.connect(self._on_ai_review)
+        layout.addWidget(self.ai_review_btn)
 
         # 清空按钮
         clear_btn = QPushButton("清空")
@@ -398,3 +428,59 @@ class CommentPanel(QWidget):
     def comment_text(self):
         """获取评论文本输入框"""
         return self.comment_editor.comment_text
+
+    def set_diff_files(self, diff_files: list):
+        """设置当前MR的diff文件（用于AI审查）"""
+        self.current_diff_files = diff_files
+
+    def _on_ai_review(self):
+        """处理AI评论按钮点击"""
+        if not self.current_diff_files:
+            QMessageBox.information(self, "提示", "请先选择一个Merge Request")
+            return
+
+        # 禁用按钮，显示正在审查
+        self.ai_review_btn.setEnabled(False)
+        self.ai_review_btn.setText("AI审查中...")
+
+        # 发射AI审查请求信号
+        self.ai_review_requested.emit()
+
+    def on_ai_review_complete(self, ai_comments: list[dict]):
+        """AI审查完成回调（由主窗口调用）"""
+        # 启用按钮
+        self.ai_review_btn.setEnabled(True)
+        self.ai_review_btn.setText("AI 评论")
+
+        # 添加AI生成的评论到待发布列表
+        for comment_data in ai_comments:
+            comment = ReviewComment(
+                id=None,
+                content=comment_data.get("content", ""),
+                line_number=comment_data.get("line_number"),
+                file_path=comment_data.get("file_path", ""),
+                comment_type="ai_comment",
+            )
+            index = len(self.local_comments)
+            self.local_comments.append(comment)
+            self.comment_list.add_comment(comment, index)
+
+        # 显示结果
+        if ai_comments:
+            QMessageBox.information(
+                self,
+                "AI审查完成",
+                f"AI已生成 {len(ai_comments)} 条评论，已添加到待发布评论列表"
+            )
+        else:
+            QMessageBox.information(
+                self,
+                "AI审查完成",
+                "未发现明显问题"
+            )
+
+    def on_ai_review_error(self, error_msg: str):
+        """AI审查错误回调"""
+        self.ai_review_btn.setEnabled(True)
+        self.ai_review_btn.setText("AI 评论")
+        QMessageBox.critical(self, "AI审查失败", f"AI审查失败:\n\n{error_msg}")
