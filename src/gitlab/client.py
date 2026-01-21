@@ -97,6 +97,7 @@ class GitLabClient:
                 per_page=per_page,
                 order_by="last_activity_at",
                 sort="desc",
+                get_all=True,
             )
             return [ProjectInfo.from_dict(p.asdict()) for p in projects]
         except GitlabError as e:
