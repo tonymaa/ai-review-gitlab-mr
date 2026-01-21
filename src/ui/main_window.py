@@ -96,43 +96,60 @@ class AIReviewWorker(QObject):
         """将AIReviewResult转换为评论列表"""
         comments = []
 
-        # 从file_reviews中提取评论
+        # 从file_reviews中提取评论（每个文件的详细审查结果）
         for file_path, file_review_list in result.file_reviews.items():
             if isinstance(file_review_list, list):
                 for review_item in file_review_list:
                     if isinstance(review_item, dict):
                         line_number = review_item.get("line_number")
                         description = review_item.get("description", "")
+                        severity = review_item.get("severity", "suggestion")
 
-                        if line_number and description:
+                        # 构建评论内容，包含严重程度
+                        if description:
+                            content = f"**{severity.capitalize()}:** {description}"
                             comments.append({
                                 "file_path": file_path,
                                 "line_number": line_number,
-                                "content": f"{description}",
+                                "content": content,
                             })
 
-        # 如果没有file_reviews，从critical_issues/warnings/suggestions提取
+        # 如果file_reviews为空，从critical_issues/warnings/suggestions提取
         if not comments:
-            # 合并所有问题
-            all_issues = []
+            # 这些已经包含了文件路径和行号信息
+            all_items = []
 
             for issue in result.critical_issues:
-                all_issues.append(("issue", issue))
+                all_items.append(("critical", issue))
 
             for warning in result.warnings:
-                all_issues.append(("warning", warning))
+                all_items.append(("warning", warning))
 
             for suggestion in result.suggestions:
-                all_issues.append(("suggestion", suggestion))
+                all_items.append(("suggestion", suggestion))
 
-            # 为每个问题创建一条评论（如果没有具体行号，放在第一个文件）
-            if all_issues and self.diff_files:
-                default_file = self.diff_files[0].get_display_path()
-                for severity, description in all_issues[:10]:  # 限制最多10条
+            # 解析每个条目，提取文件路径和行号
+            for severity, full_desc in all_items[:20]:  # 限制最多20条
+                # 格式: "file_path:line_number - description" 或 "file_path - description"
+                parts = full_desc.split(" - ", 1)
+                if len(parts) >= 2:
+                    location_part = parts[0]
+                    description_part = parts[1]
+
+                    # 尝试解析文件路径和行号
+                    file_path = location_part
+                    line_number = None
+
+                    if ":" in location_part:
+                        path_parts = location_part.rsplit(":", 1)
+                        if path_parts[-1].isdigit():
+                            file_path = path_parts[0]
+                            line_number = int(path_parts[-1])
+
                     comments.append({
-                        "file_path": default_file,
-                        "line_number": 1,  # 默认第一行
-                        "content": f"**{severity}:** {description}",
+                        "file_path": file_path,
+                        "line_number": line_number,
+                        "content": f"**{severity.capitalize()}:** {description_part}",
                     })
 
         return comments

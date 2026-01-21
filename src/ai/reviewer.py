@@ -188,37 +188,183 @@ class OpenAIReviewer(AIReviewer):
         # 构建文件变更摘要
         file_changes = self._build_file_changes_summary(diff_files)
 
-        # 构建提示词
-        if quick_mode:
-            prompt = build_quick_review_prompt(file_changes)
-        else:
-            prompt = build_review_prompt(
-                title=mr.title,
-                description=mr.description or "",
-                source_branch=mr.source_branch,
-                target_branch=mr.target_branch,
-                file_changes=file_changes,
-                review_rules=review_rules,
-            )
+        # 收集所有文件的审查结果
+        all_file_reviews: Dict[str, List[Dict[str, Any]]] = {}
+        all_issues: List[str] = []
+        all_warnings: List[str] = []
+        all_suggestions: List[str] = []
 
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
-        ]
+        # 逐个审查每个文件
+        for diff_file in diff_files:
+            try:
+                # 构建单文件审查提示词
+                change_type = "New" if diff_file.new_file else "Modified" if not diff_file.deleted_file else "Deleted"
+                prompt = self._build_detailed_file_review_prompt(
+                    file_path=diff_file.get_display_path(),
+                    change_type=change_type,
+                    diff_content=diff_file.diff,
+                    review_rules=review_rules,
+                )
 
-        # 调用API
-        try:
-            response = asyncio.run(self._call_api(messages, response_format="json"))
-            result = self._parse_review_response(response)
-        except Exception as e:
-            logger.error(f"AI审查失败: {e}")
-            return self._create_error_result(str(e))
+                messages = [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ]
 
-        # 补充详细信息
-        result.provider = "openai"
-        result.model = self.model
+                # 调用API
+                response = asyncio.run(self._call_api(messages, response_format="json"))
+
+                # 解析结果
+                file_reviews = self._parse_detailed_file_review(response, diff_file.get_display_path())
+
+                if file_reviews:
+                    all_file_reviews[diff_file.get_display_path()] = file_reviews
+
+                    # 分类问题
+                    for review in file_reviews:
+                        severity = review.get("severity", "suggestion")
+                        description = review.get("description", "")
+                        line_number = review.get("line_number")
+
+                        # 构建带位置信息的描述
+                        location_desc = f"{diff_file.get_display_path()}"
+                        if line_number:
+                            location_desc += f":{line_number}"
+                        full_desc = f"{location_desc} - {description}"
+
+                        if severity == "critical":
+                            all_issues.append(full_desc)
+                        elif severity == "warning":
+                            all_warnings.append(full_desc)
+                        else:
+                            all_suggestions.append(full_desc)
+
+            except Exception as e:
+                logger.error(f"审查文件 {diff_file.get_display_path()} 失败: {e}")
+                # 继续审查下一个文件
+                continue
+
+        # 构建整体摘要
+        summary = self._build_overall_summary(
+            mr=mr,
+            diff_files=diff_files,
+            total_issues=len(all_issues),
+            total_warnings=len(all_warnings),
+            total_suggestions=len(all_suggestions),
+        )
+
+        # 创建结果
+        result = AIReviewResult(
+            provider="openai",
+            model=self.model,
+            summary=summary,
+            overall_score=self._calculate_score(len(all_issues), len(all_warnings)),
+            issues_count=len(all_issues),
+            suggestions_count=len(all_warnings) + len(all_suggestions),
+            file_reviews=all_file_reviews,
+            critical_issues=all_issues,
+            warnings=all_warnings,
+            suggestions=all_suggestions,
+        )
 
         return result
+
+    def _build_detailed_file_review_prompt(
+        self,
+        file_path: str,
+        change_type: str,
+        diff_content: str,
+        review_rules: List[str],
+    ) -> str:
+        """构建详细的文件审查提示词"""
+        rules_text = "\n".join(f"- {rule}" for rule in review_rules)
+
+        prompt = f"""Please review the following code changes:
+
+## File Path
+{file_path}
+
+## Change Type
+{change_type}
+
+## Review Rules
+{rules_text}
+
+## Diff Content
+```diff
+{diff_content}
+```
+
+Please analyze this diff and provide feedback. Output must be JSON with the following structure:
+{{
+  "reviews": [
+    {{
+      "line_number": <line number or null>,
+      "severity": <"critical" | "warning" | "suggestion">,
+      "description": "<detailed description of the issue or suggestion>"
+    }}
+  ]
+}}
+
+Focus on:
+1. Bugs and logic errors
+2. Security vulnerabilities
+3. Performance issues
+4. Code quality and maintainability
+5. Best practices violations
+"""
+        return prompt
+
+    def _parse_detailed_file_review(self, response: str, file_path: str) -> List[Dict[str, Any]]:
+        """解析详细的文件审查响应"""
+        try:
+            data = json.loads(response)
+            reviews = data.get("reviews", [])
+
+            result = []
+            for review in reviews:
+                result.append({
+                    "line_number": review.get("line_number"),
+                    "severity": review.get("severity", "suggestion"),
+                    "description": review.get("description", ""),
+                })
+
+            return result
+
+        except json.JSONDecodeError as e:
+            logger.error(f"解析文件审查响应失败: {e}")
+            return []
+
+    def _build_overall_summary(
+        self,
+        mr: MergeRequestInfo,
+        diff_files: List[DiffFile],
+        total_issues: int,
+        total_warnings: int,
+        total_suggestions: int,
+    ) -> str:
+        """构建整体审查摘要"""
+        summary_parts = [
+            f"## Merge Request Review Summary",
+            f"",
+            f"**Title:** {mr.title}",
+            f"**Source Branch:** {mr.source_branch} → **Target Branch:** {mr.target_branch}",
+            f"",
+            f"### Statistics",
+            f"- Files changed: {len(diff_files)}",
+            f"- Critical issues: {total_issues}",
+            f"- Warnings: {total_warnings}",
+            f"- Suggestions: {total_suggestions}",
+        ]
+
+        return "\n".join(summary_parts)
+
+    def _calculate_score(self, issues: int, warnings: int) -> int:
+        """计算整体评分 (1-10)"""
+        score = 10
+        score -= issues * 2  # 每个严重问题扣2分
+        score -= warnings * 0.5  # 每个警告扣0.5分
+        return max(1, min(10, int(score)))
 
     def review_diff_file(self, diff_file: DiffFile) -> FileReview:
         """
