@@ -1,0 +1,453 @@
+"""GitLab客户端封装 - 提供GitLab API调用的简化接口"""
+
+import logging
+from typing import List, Optional, Dict, Any
+from pathlib import Path
+
+import gitlab
+from gitlab.exceptions import GitlabError, GitlabAuthenticationError, GitlabGetError
+
+from .models import (
+    MergeRequestInfo,
+    DiffFile,
+    ProjectInfo,
+    MRState,
+)
+from ..core.database import DatabaseManager
+
+logger = logging.getLogger(__name__)
+
+
+class GitLabClient:
+    """GitLab API客户端封装"""
+
+    def __init__(self, url: str, token: str, db_manager: Optional[DatabaseManager] = None):
+        """
+        初始化GitLab客户端
+
+        Args:
+            url: GitLab服务器地址
+            token: 个人访问令牌
+            db_manager: 数据库管理器（可选，用于缓存）
+        """
+        self.url = url
+        self.token = token
+        self.db_manager = db_manager
+
+        # 创建GitLab客户端
+        try:
+            self._client = gitlab.Gitlab(url, private_token=token)
+            # 验证连接
+            self._client.auth()
+            logger.info(f"成功连接到GitLab: {url}")
+        except GitlabAuthenticationError:
+            raise ValueError("GitLab认证失败，请检查Token是否正确")
+        except GitlabError as e:
+            raise ValueError(f"连接GitLab失败: {e}")
+
+    def get_current_user(self) -> Optional[Dict[str, Any]]:
+        """获取当前用户信息"""
+        try:
+            return self._client.user.__dict__['_attrs']
+        except GitlabError as e:
+            logger.error(f"获取当前用户信息失败: {e}")
+            return None
+
+    def get_project(self, project_id: str | int) -> Optional[ProjectInfo]:
+        """
+        获取项目信息
+
+        Args:
+            project_id: 项目ID或路径 (如: "group/project")
+
+        Returns:
+            ProjectInfo对象或None
+        """
+        try:
+            project = self._client.projects.get(project_id)
+            return ProjectInfo.from_dict(project.asdict())
+        except GitlabGetError:
+            logger.error(f"项目不存在: {project_id}")
+            return None
+        except GitlabError as e:
+            logger.error(f"获取项目信息失败: {e}")
+            return None
+
+    def list_projects(
+        self,
+        membership: bool = True,
+        search: Optional[str] = None,
+        per_page: int = 50,
+    ) -> List[ProjectInfo]:
+        """
+        列出项目
+
+        Args:
+            membership: 是否只列出成员项目
+            search: 搜索关键词
+            per_page: 每页数量
+
+        Returns:
+            项目列表
+        """
+        try:
+            projects = self._client.projects.list(
+                membership=membership,
+                search=search,
+                per_page=per_page,
+                order_by="last_activity_at",
+                sort="desc",
+            )
+            return [ProjectInfo.from_dict(p.asdict()) for p in projects]
+        except GitlabError as e:
+            logger.error(f"列出项目失败: {e}")
+            return []
+
+    def list_merge_requests(
+        self,
+        project_id: str | int,
+        state: str = "opened",
+        order_by: str = "updated_at",
+        sort: str = "desc",
+        per_page: int = 100,
+    ) -> List[MergeRequestInfo]:
+        """
+        列出项目的Merge Requests
+
+        Args:
+            project_id: 项目ID或路径
+            state: MR状态 (opened, closed, merged, all)
+            order_by: 排序字段
+            sort: 排序方向
+            per_page: 每页数量
+
+        Returns:
+            MergeRequestInfo列表
+        """
+        try:
+            project = self._client.projects.get(project_id)
+            mrs = project.mergerequests.list(
+                state=state,
+                order_by=order_by,
+                sort=sort,
+                per_page=per_page,
+                get_all=False,  # 明确指定分页行为
+            )
+
+            mr_list = []
+            for mr in mrs:
+                mr_info = MergeRequestInfo.from_dict(mr.asdict())
+
+                # 缓存到数据库
+                if self.db_manager:
+                    self.db_manager.save_merge_request(mr_info.to_database_dict())
+
+                mr_list.append(mr_info)
+
+            return mr_list
+
+        except GitlabGetError:
+            logger.error(f"项目不存在: {project_id}")
+            return []
+        except GitlabError as e:
+            logger.error(f"列出MR失败: {e}")
+            return []
+
+    def get_merge_request(
+        self,
+        project_id: str | int,
+        mr_iid: int,
+        include_diff: bool = False,
+    ) -> Optional[MergeRequestInfo]:
+        """
+        获取单个Merge Request详情
+
+        Args:
+            project_id: 项目ID或路径
+            mr_iid: MR的IID
+            include_diff: 是否包含Diff信息
+
+        Returns:
+            MergeRequestInfo对象或None
+        """
+        try:
+            project = self._client.projects.get(project_id)
+            mr = project.mergerequests.get(mr_iid, include_diff=include_diff)
+            mr_info = MergeRequestInfo.from_dict(mr.asdict())
+
+            # 缓存到数据库
+            if self.db_manager:
+                db_mr = self.db_manager.save_merge_request(mr_info.to_database_dict())
+
+                # 如果需要diff，获取并缓存diff文件
+                if include_diff:
+                    diff_files = self.get_merge_request_diffs(project_id, mr_iid)
+                    for diff_file in diff_files:
+                        self.db_manager.save_diff_file(db_mr.id, diff_file.to_database_dict())
+
+            return mr_info
+
+        except GitlabGetError:
+            logger.error(f"MR不存在: {project_id}!{mr_iid}")
+            return None
+        except GitlabError as e:
+            logger.error(f"获取MR详情失败: {e}")
+            return None
+
+    def get_merge_request_diffs(
+        self,
+        project_id: str | int,
+        mr_iid: int,
+    ) -> List[DiffFile]:
+        """
+        获取MR的Diff文件列表
+
+        Args:
+            project_id: 项目ID或路径
+            mr_iid: MR的IID
+
+        Returns:
+            DiffFile列表
+        """
+        try:
+            project = self._client.projects.get(project_id)
+            mr = project.mergerequests.get(mr_iid)
+
+            # 使用changes()方法获取完整的变更信息
+            changes = mr.changes()
+            diff_files = []
+
+            for change in changes.get("changes", []):
+                # change包含: old_path, new_path, diff, new_file, renamed_file, deleted_file
+                diff_file = DiffFile(
+                    old_path=change.get("old_path", ""),
+                    new_path=change.get("new_path", ""),
+                    new_file=change.get("new_file", False),
+                    renamed_file=change.get("renamed_file", False),
+                    deleted_file=change.get("deleted_file", False),
+                    diff=change.get("diff", ""),
+                )
+
+                # 计算增删行数
+                diff_text = change.get("diff", "")
+                additions = diff_text.count("\n+") - diff_text.count("\n+++")
+                deletions = diff_text.count("\n-") - diff_text.count("\n---")
+                diff_file.additions = max(0, additions)
+                diff_file.deletions = max(0, deletions)
+
+                diff_files.append(diff_file)
+
+            return diff_files
+
+        except GitlabGetError:
+            logger.error(f"MR不存在: {project_id}!{mr_iid}")
+            return []
+        except GitlabError as e:
+            logger.error(f"获取MR Diff失败: {e}")
+            return []
+
+    def get_merge_request_changes(
+        self,
+        project_id: str | int,
+        mr_iid: int,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        获取MR的变更信息
+
+        Args:
+            project_id: 项目ID或路径
+            mr_iid: MR的IID
+
+        Returns:
+            变更信息字典
+        """
+        try:
+            project = self._client.projects.get(project_id)
+            mr = project.mergerequests.get(mr_iid)
+            changes = mr.changes()
+
+            return {
+                "id": changes["id"],
+                "iid": changes["iid"],
+                "changes": changes.get("changes", []),
+                "diff_refs": changes.get("diff_refs", {}),
+            }
+
+        except GitlabGetError:
+            logger.error(f"MR不存在: {project_id}!{mr_iid}")
+            return None
+        except GitlabError as e:
+            logger.error(f"获取MR变更失败: {e}")
+            return None
+
+    def get_file_content(
+        self,
+        project_id: str | int,
+        file_path: str,
+        ref: str = "main",
+    ) -> Optional[str]:
+        """
+        获取文件内容
+
+        Args:
+            project_id: 项目ID或路径
+            file_path: 文件路径
+            ref: 分支或提交引用
+
+        Returns:
+            文件内容或None
+        """
+        try:
+            project = self._client.projects.get(project_id)
+            file = project.files.get(file_path=file_path, ref=ref)
+            return file.decode()
+        except GitlabGetError:
+            logger.error(f"文件不存在: {file_path} @ {ref}")
+            return None
+        except GitlabError as e:
+            logger.error(f"获取文件内容失败: {e}")
+            return None
+
+    def create_merge_request_note(
+        self,
+        project_id: str | int,
+        mr_iid: int,
+        body: str,
+    ) -> bool:
+        """
+        创建MR评论
+
+        Args:
+            project_id: 项目ID或路径
+            mr_iid: MR的IID
+            body: 评论内容
+
+        Returns:
+            是否成功
+        """
+        try:
+            project = self._client.projects.get(project_id)
+            mr = project.mergerequests.get(mr_iid)
+            mr.notes.create({"body": body})
+            logger.info(f"成功为MR {mr_iid}添加评论")
+            return True
+        except GitlabError as e:
+            logger.error(f"添加MR评论失败: {e}")
+            return False
+
+    def create_merge_request_discussion(
+        self,
+        project_id: str | int,
+        mr_iid: int,
+        body: str,
+        file_path: str,
+        line_number: int,
+        line_type: str = "new",
+    ) -> bool:
+        """
+        创建MR行评论
+
+        Args:
+            project_id: 项目ID或路径
+            mr_iid: MR的IID
+            body: 评论内容
+            file_path: 文件路径
+            line_number: 行号
+            line_type: 行类型 (old/new)
+
+        Returns:
+            是否成功
+        """
+        try:
+            project = self._client.projects.get(project_id)
+            mr = project.mergerequests.get(mr_iid)
+
+            # 构造位置参数
+            position = {
+                "position_type": "text",
+                "new_path": file_path if line_type == "new" else None,
+                "old_path": file_path if line_type == "old" else None,
+                "position_type": "text",
+            }
+
+            if line_type == "new":
+                position["new_line"] = line_number
+            else:
+                position["old_line"] = line_number
+
+            mr.discussions.create({"body": body, "position": position})
+            logger.info(f"成功为MR {mr_iid}的文件 {file_path}:{line_number} 添加行评论")
+            return True
+
+        except GitlabError as e:
+            logger.error(f"添加MR行评论失败: {e}")
+            return False
+
+    def accept_merge_request(
+        self,
+        project_id: str | int,
+        mr_iid: int,
+        merge_commit_message: Optional[str] = None,
+        should_remove_source_branch: bool = False,
+    ) -> bool:
+        """
+        接受（合并）Merge Request
+
+        Args:
+            project_id: 项目ID或路径
+            mr_iid: MR的IID
+            merge_commit_message: 合并提交消息
+            should_remove_source_branch: 是否删除源分支
+
+        Returns:
+            是否成功
+        """
+        try:
+            project = self._client.projects.get(project_id)
+            mr = project.mergerequests.get(mr_iid)
+
+            merge_params = {}
+            if merge_commit_message:
+                merge_params["merge_commit_message"] = merge_commit_message
+            if should_remove_source_branch:
+                merge_params["should_remove_source_branch"] = True
+
+            mr.merge(merge_params)
+            logger.info(f"成功合并MR {mr_iid}")
+            return True
+
+        except GitlabError as e:
+            logger.error(f"合并MR失败: {e}")
+            return False
+
+
+def parse_project_identifier(identifier: str) -> tuple[str, str | int]:
+    """
+    解析项目标识符
+
+    支持以下格式:
+    - 123 (纯数字ID)
+    - group/project (路径)
+    - https://gitlab.com/group/project (URL)
+
+    Args:
+        identifier: 项目标识符
+
+    Returns:
+        (host, project_id_or_path) 元组
+    """
+    # 检查是否是URL
+    if identifier.startswith("http://") or identifier.startswith("https://"):
+        from urllib.parse import urlparse
+
+        parsed = urlparse(identifier)
+        host = f"{parsed.scheme}://{parsed.netloc}"
+        path = parsed.path.strip("/")
+        return host, path
+
+    # 如果是纯数字，作为ID处理
+    if identifier.isdigit():
+        return "", int(identifier)
+
+    # 否则作为路径处理
+    return "", identifier

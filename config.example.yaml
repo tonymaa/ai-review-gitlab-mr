@@ -1,0 +1,122 @@
+# GitLab AI Review 配置文件示例
+# 复制此文件为 config.yaml 并填入你的配置
+
+# ================================
+# GitLab 配置
+# ================================
+gitlab:
+  # GitLab 服务器地址
+  # 示例: https://gitlab.com 或 http://gitlab.example.com
+  url: ""
+
+  # 个人访问令牌 (Personal Access Token)
+  # 在 GitLab 中创建: Settings -> Access Tokens
+  # 需要的权限: api, read_api, read_repository
+  token: ""
+
+  # 默认项目 (可选)
+  # 可以是数字ID或项目路径，如: "group/project" 或: "myorg/myproject"
+  default_project_id: null
+
+# ================================
+# AI 审查配置
+# ================================
+ai:
+  # AI 服务提供商
+  # 可选值: openai, ollama
+  provider: "openai"
+
+  # OpenAI 配置
+  openai:
+    # OpenAI API 密钥
+    # 获取地址: https://platform.openai.com/api-keys
+    api_key: ""
+
+    # API 端点 (可选，用于第三方代理)
+    # 官方: https://api.openai.com/v1
+    # 国内代理示例: https://api.chatanywhere.tech/v1
+    base_url: null
+
+    # 使用的模型
+    # 可选: gpt-4, gpt-4-turbo, gpt-3.5-turbo 等
+    model: "gpt-3.5-turbo"
+
+    # 温度参数 (0-2)
+    # 值越低输出越确定，值越高输出越随机
+    temperature: 0.3
+
+    # 最大 token 数
+    max_tokens: 2000
+
+  # Ollama 配置 (本地 AI 模型)
+  ollama:
+    # Ollama 服务地址
+    base_url: "http://localhost:11434"
+
+    # 使用的模型
+    # 可选: codellama, deepseek-coder, mistral 等
+    model: "codellama"
+
+  # 代码审查规则
+  # AI 将根据这些规则进行代码审查
+  review_rules:
+    - "检查代码是否符合代码规范 (如 PEP8)"
+    - "检查是否有潜在的安全漏洞"
+    - "检查是否有性能优化空间"
+    - "检查代码可读性和可维护性"
+    - "检查错误处理是否完善"
+    - "检查是否有重复代码"
+    - "检查是否缺少必要的注释和文档"
+
+# ================================
+# 应用配置
+# ================================
+app:
+  # 数据缓存目录
+  cache_dir: "./cache"
+
+  # SQLite 数据库路径 (用于缓存 MR 和审查记录)
+  database_path: "./data/review.db"
+
+  # UI 界面配置
+  ui:
+    # 主题: default, dark, light
+    theme: "default"
+
+    # 窗口大小
+    window_width: 1400
+    window_height: 900
+
+    # 面板宽度
+    split_left: 300   # 左侧 MR 列表宽度
+    split_right: 400  # 右侧审查面板宽度
+
+  # 自动刷新配置
+  auto_refresh:
+    # 是否启用自动刷新
+    enabled: true
+
+    # 刷新间隔 (秒)
+    interval: 300
+
+  # 日志配置
+  logging:
+    # 日志级别: DEBUG, INFO, WARNING, ERROR
+    level: "INFO"
+
+    # 日志文件路径
+    file: "./logs/app.log"
+
+# ================================
+# 配置说明
+# ================================
+#
+# 1. 推荐使用 .env 文件配置敏感信息 (Token、API Key)
+#    将 .env.example 复制为 .env 并填入配置
+#
+# 2. 配置优先级: 环境变量 > config.yaml
+#
+# 3. 敏感配置建议:
+#    - GITLAB_URL 和 GITLAB_TOKEN 建议放在 .env
+#    - OPENAI_API_KEY 建议放在 .env
+#    - 非敏感配置 (如 UI 布局) 可以放在 config.yaml
