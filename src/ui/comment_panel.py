@@ -13,11 +13,107 @@ from PyQt6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QInputDialog,
+    QAbstractItemView,
 )
-from PyQt6.QtCore import pyqtSignal, Qt
+from PyQt6.QtCore import pyqtSignal, Qt, QSize
 from PyQt6.QtGui import QColor
 
 from ..gitlab.models import ReviewComment
+
+
+class CommentListItem(QWidget):
+    """评论列表项 - 自定义widget以提供更好的UI"""
+
+    # 信号：发布、编辑、删除
+    publish_requested = pyqtSignal()
+    edit_requested = pyqtSignal()
+    delete_requested = pyqtSignal()
+    jump_requested = pyqtSignal()
+
+    def __init__(self, comment: ReviewComment, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.comment = comment
+        self._setup_ui()
+
+    def _setup_ui(self):
+        """设置UI"""
+        self.setFixedHeight(70)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 6, 12, 6)
+        layout.setSpacing(4)
+
+        # 顶部：文件路径、行号、类型标签
+        header = QHBoxLayout()
+        header.setSpacing(6)
+
+        # 文件路径标签
+        file_label = QLabel(self._get_display_path())
+        file_label.setStyleSheet("color: #495057; font-size: 11px; font-weight: 600;")
+        header.addWidget(file_label)
+
+        # 行号标签
+        if self.comment.line_number:
+            line_label = QLabel(f":{self.comment.line_number}")
+            line_label.setStyleSheet("""
+                QLabel {
+                    background-color: #e7f5ff;
+                    color: #1971c2;
+                    padding: 2px 6px;
+                    border-radius: 3px;
+                    font-size: 10px;
+                    font-weight: 600;
+                }
+            """)
+            header.addWidget(line_label)
+
+        header.addStretch()
+
+        # 评论类型标签
+        type_text = "AI" if self.comment.comment_type == "ai_comment" else "手动"
+        type_color = "#7c4dff" if self.comment.comment_type == "ai_comment" else "#228be6"
+        type_label = QLabel(type_text)
+        type_label.setStyleSheet(f"""
+            QLabel {{
+                background-color: {type_color};
+                color: white;
+                padding: 2px 6px;
+                border-radius: 3px;
+                font-size: 9px;
+                font-weight: 600;
+            }}
+        """)
+        header.addWidget(type_label)
+
+        layout.addLayout(header)
+
+        # 中部：评论内容
+        content = self.comment.content
+        if len(content) > 80:
+            content = content[:80] + "..."
+
+        content_label = QLabel(content)
+        content_label.setStyleSheet("color: #212529; font-size: 12px;")
+        content_label.setWordWrap(True)
+        content_label.setMaximumHeight(36)
+        layout.addWidget(content_label)
+
+    def _get_display_path(self) -> str:
+        """获取显示的文件路径"""
+        path = self.comment.file_path or ""
+        if len(path) > 40:
+            return "..." + path[-37:]
+        return path
+
+    def enterEvent(self, event):
+        """鼠标进入事件"""
+        self.setStyleSheet("background-color: #f8f9fa; border-radius: 4px;")
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        """鼠标离开事件"""
+        self.setStyleSheet("")
+        super().leaveEvent(event)
 
 
 class CommentEditor(QWidget):
@@ -38,9 +134,9 @@ class CommentEditor(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
 
         # 标题
-        title = QLabel("添加评论")
-        title.setStyleSheet("font-weight: bold; font-size: 14px; padding: 4px;")
-        layout.addWidget(title)
+        self.title_label = QLabel("添加评论")
+        self.title_label.setStyleSheet("font-weight: bold; font-size: 14px; padding: 4px;")
+        layout.addWidget(self.title_label)
 
         # 位置信息
         self.location_label = QLabel("位置: -")
@@ -69,6 +165,10 @@ class CommentEditor(QWidget):
         line_label = {"new": "新", "old": "旧", "context": "上下文"}.get(line_type, line_type)
         self.location_label.setText(f"文件: {file_path}\n行号: {line_number} ({line_label})")
 
+    def set_title(self, title: str):
+        """设置标题"""
+        self.title_label.setText(title)
+
     def _on_submit(self):
         """提交评论"""
         content = self.comment_text.toPlainText().strip()
@@ -87,32 +187,43 @@ class CommentEditor(QWidget):
         """清空"""
         self.comment_text.clear()
         self.location_label.setText("位置: -")
+        self.set_title("添加评论")
 
 
 class CommentListWidget(QListWidget):
     """评论列表组件"""
 
-    # 信号：删除评论、编辑评论、跳转到评论位置、发布单个评论
+    # 信号：删除评论、编辑评论、跳转到评论位置、发布单个评论、项被选中
     delete_requested = pyqtSignal(int)  # index
     edit_requested = pyqtSignal(int)  # index
     jump_to_comment = pyqtSignal(str, int)  # (file_path, line_number)
     publish_requested = pyqtSignal(int)  # index - 发布单个评论
+    item_clicked = pyqtSignal(int)  # index - 单击选中
 
+    # SelectionMode设为SingleSelection
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.setStyleSheet("""
             QListWidget {
                 border: 1px solid #dee2e6;
-                border-radius: 4px;
-                background-color: #f8f9fa;
+                border-radius: 6px;
+                background-color: #ffffff;
+                outline: none;
             }
             QListWidget::item {
-                padding: 8px;
-                border-bottom: 1px solid #dee2e6;
-                color: black;
+                border: none;
+                border-bottom: 1px solid #f1f3f5;
+                padding: 10px 12px;
+                color: #212529;
+                background-color: #ffffff;
             }
             QListWidget::item:hover {
-                background-color: #e9ecef;
+                background-color: #f8f9fa;
+            }
+            QListWidget::item:selected {
+                background-color: #e7f5ff;
+                color: #212529;
             }
         """)
 
@@ -120,11 +231,21 @@ class CommentListWidget(QListWidget):
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_context_menu)
 
-        # 连接双击事件
+        # 连接单击和双击事件
+        self.itemClicked.connect(self._on_item_clicked)
         self.itemDoubleClicked.connect(self._on_item_double_clicked)
 
+    def _on_item_clicked(self, item: QListWidgetItem):
+        """处理单击事件 - 选中并准备编辑"""
+        if not item:
+            return
+
+        # 获取评论索引
+        list_index = self.row(item)
+        self.item_clicked.emit(list_index)
+
     def _on_item_double_clicked(self, item: QListWidgetItem):
-        """处理双击事件"""
+        """处理双击事件 - 跳转到代码位置"""
         if not item:
             return
 
@@ -176,15 +297,18 @@ class CommentListWidget(QListWidget):
             comment: 评论对象
             index: 索引位置，用于关联删除
         """
+        # 创建列表项
         item = QListWidgetItem()
         item.setData(Qt.ItemDataRole.UserRole, index)
 
-        # 创建显示文本
-        location = f"{comment.file_path}:{comment.line_number}" if comment.line_number else comment.file_path
-        text = f"<b>{location}</b><br>{comment.content}"
+        # 设置item大小以适应自定义widget
+        item.setSizeHint(QSize(0, 70))
 
-        item.setText(text)
+        # 创建自定义widget
+        widget = CommentListItem(comment, self)
+
         self.addItem(item)
+        self.setItemWidget(item, widget)
 
         # 滚动到底部
         self.scrollToBottom()
@@ -257,6 +381,7 @@ class CommentPanel(QWidget):
         self.comment_list.edit_requested.connect(self._on_edit_comment)
         self.comment_list.jump_to_comment.connect(self._on_jump_to_comment)
         self.comment_list.publish_requested.connect(self._on_publish_single)
+        self.comment_list.item_clicked.connect(self._on_item_clicked)
         comments_layout.addWidget(self.comment_list)
 
         # 发布全部按钮
@@ -329,7 +454,15 @@ class CommentPanel(QWidget):
         self.current_line_number = line_number
         self.current_line_type = line_type
 
+        # 重置为添加评论模式
+        self._editing_index = None
+
+        # 设置标题为"添加评论"
+        self.comment_editor.set_title("添加评论")
         self.comment_editor.set_location(file_path, line_number, line_type)
+
+        # 清空评论内容
+        self.comment_editor.comment_text.clear()
         self.comment_text.setFocus()
 
     def _on_comment_submitted(self, content: str):
@@ -401,11 +534,41 @@ class CommentPanel(QWidget):
                 self.current_line_type = "new"  # 默认为新行
 
                 # 更新编辑器标题为编辑模式
+                self.comment_editor.set_title("编辑评论")
                 self.comment_editor.location_label.setText(f"编辑评论 - {comment.file_path}:{comment.line_number}")
                 self.comment_editor.comment_text.setPlainText(comment.content)
 
                 # 聚焦到编辑器
                 self.comment_text.setFocus()
+
+    def _on_item_clicked(self, list_index: int):
+        """处理单击评论项 - 加载到编辑器准备编辑"""
+        # 获取实际的评论索引
+        item = self.comment_list.item(list_index)
+        if not item:
+            return
+
+        comment_index = item.data(Qt.ItemDataRole.UserRole)
+        if comment_index is None or comment_index < 0 or comment_index >= len(self.local_comments):
+            return
+
+        comment = self.local_comments[comment_index]
+
+        # 设置编辑模式
+        self._editing_index = comment_index
+
+        # 将评论内容加载到编辑器
+        self.current_file_path = comment.file_path
+        self.current_line_number = comment.line_number
+        self.current_line_type = "new"  # 默认为新行
+
+        # 更新编辑器标题为编辑模式
+        self.comment_editor.set_title("编辑评论")
+        self.comment_editor.location_label.setText(f"编辑评论 - {comment.file_path}:{comment.line_number}")
+        self.comment_editor.comment_text.setPlainText(comment.content)
+
+        # 聚焦到编辑器
+        self.comment_text.setFocus()
 
     def _refresh_comment_list(self):
         """刷新评论列表（更新索引）"""
