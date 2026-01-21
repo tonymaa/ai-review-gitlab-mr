@@ -108,7 +108,7 @@ class AIReviewWorker(QObject):
                             comments.append({
                                 "file_path": file_path,
                                 "line_number": line_number,
-                                "content": f"**AI代码审查**\n\n{description}",
+                                "content": f"{description}",
                             })
 
         # 如果没有file_reviews，从critical_issues/warnings/suggestions提取
@@ -132,7 +132,7 @@ class AIReviewWorker(QObject):
                     comments.append({
                         "file_path": default_file,
                         "line_number": 1,  # 默认第一行
-                        "content": f"**AI代码审查 - {severity}**\n\n{description}",
+                        "content": f"**{severity}**: {description}",
                     })
 
         return comments
