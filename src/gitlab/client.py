@@ -396,7 +396,7 @@ class GitLabClient:
                 error_msg = str(e)
                 if "line_code" in error_msg or "can't be blank" in error_msg:
                     # 添加文件位置信息到评论内容，改为普通评论
-                    file_note_body = f"**File: {file_path}:{line_number}**\n\n{body}"
+                    file_note_body = f"**{file_path}:{line_number}**\n\n{body}"
                     mr.notes.create({"body": file_note_body})
                     logger.info(f"行号不存在，已为MR {mr_iid}的文件 {file_path}:{line_number} 添加普通评论")
                     return True

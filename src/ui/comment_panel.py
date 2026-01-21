@@ -92,10 +92,11 @@ class CommentEditor(QWidget):
 class CommentListWidget(QListWidget):
     """评论列表组件"""
 
-    # 信号：删除评论、编辑评论、跳转到评论位置
+    # 信号：删除评论、编辑评论、跳转到评论位置、发布单个评论
     delete_requested = pyqtSignal(int)  # index
     edit_requested = pyqtSignal(int)  # index
     jump_to_comment = pyqtSignal(str, int)  # (file_path, line_number)
+    publish_requested = pyqtSignal(int)  # index - 发布单个评论
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -151,12 +152,16 @@ class CommentListWidget(QListWidget):
             return
 
         menu = QMenu(self)
+        publish_action = menu.addAction("发布")
         edit_action = menu.addAction("编辑")
         delete_action = menu.addAction("删除")
 
         # 菜单操作
         action = menu.exec(self.mapToGlobal(pos))
-        if action == edit_action:
+        if action == publish_action:
+            index = self.row(item)
+            self.publish_requested.emit(index)
+        elif action == edit_action:
             index = self.row(item)
             self.edit_requested.emit(index)
         elif action == delete_action:
@@ -251,6 +256,7 @@ class CommentPanel(QWidget):
         self.comment_list.delete_requested.connect(self._on_delete_comment)
         self.comment_list.edit_requested.connect(self._on_edit_comment)
         self.comment_list.jump_to_comment.connect(self._on_jump_to_comment)
+        self.comment_list.publish_requested.connect(self._on_publish_single)
         comments_layout.addWidget(self.comment_list)
 
         # 发布全部按钮
@@ -444,6 +450,37 @@ class CommentPanel(QWidget):
             self.local_comments.clear()
             self.comment_list.clear_comments()
             QMessageBox.information(self, "成功", "评论已发布")
+
+    def _on_publish_single(self, list_index: int):
+        """发布单条评论到GitLab"""
+        # 获取实际的评论索引
+        item = self.comment_list.item(list_index)
+        if not item:
+            return
+
+        comment_index = item.data(Qt.ItemDataRole.UserRole)
+        if comment_index is None or comment_index < 0 or comment_index >= len(self.local_comments):
+            return
+
+        comment = self.local_comments[comment_index]
+
+        # 确定行类型
+        line_type = self.current_line_type or "new"
+
+        # 发布评论
+        self.publish_comment_requested.emit(
+            comment.file_path,
+            comment.content,
+            comment.line_number,
+            line_type,
+        )
+
+        # 从本地列表中删除已发布的评论
+        del self.local_comments[comment_index]
+        self.comment_list.takeItem(list_index)
+
+        # 重新构建列表以更新索引
+        self._refresh_comment_list()
 
     def _on_clear(self):
         """清空所有评论"""
