@@ -294,7 +294,6 @@ class GitLabClient:
             # 使用changes()方法获取完整的变更信息
             changes = mr.changes()
             diff_files = []
-
             for change in changes.get("changes", []):
                 # change包含: old_path, new_path, diff, new_file, renamed_file, deleted_file
                 diff_file = DiffFile(

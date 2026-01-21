@@ -199,6 +199,7 @@ class OpenAIReviewer(AIReviewer):
             try:
                 # 构建单文件审查提示词
                 change_type = "New" if diff_file.new_file else "Modified" if not diff_file.deleted_file else "Deleted"
+                print(diff_file.diff)
                 prompt = self._build_detailed_file_review_prompt(
                     file_path=diff_file.get_display_path(),
                     change_type=change_type,
@@ -213,7 +214,7 @@ class OpenAIReviewer(AIReviewer):
 
                 # 调用API
                 response = asyncio.run(self._call_api(messages, response_format="json"))
-
+                
                 # 解析结果
                 file_reviews = self._parse_detailed_file_review(response, diff_file.get_display_path())
 
@@ -277,50 +278,136 @@ class OpenAIReviewer(AIReviewer):
         review_rules: List[str],
     ) -> str:
         """构建详细的文件审查提示词"""
-        rules_text = "\n".join(f"- {rule}" for rule in review_rules)
+        rules_text = "\\n".join(f"- {rule}" for rule in review_rules)
 
-        prompt = f"""Please review the following code changes:
+        # 使用字符串拼接避免 f-string 中的特殊字符问题
+        prompt_parts = [
+            "Please review the following code changes:",
+            "",
+            "## File Path",
+            file_path,
+            "",
+            "## Change Type",
+            change_type,
+            "",
+            "## Review Rules",
+            rules_text,
+            "",
+            "## Line Number Rules (CRITICAL - YOU MUST GET THIS RIGHT)",
+            "",
+            "The diff hunk header format: @@ -<old_start>,<old_count> +<new_start>,<new_count> @@",
+            "",
+            "Line prefixes in diff:",
+            "- Lines starting with ' ' (space): context/unchanged lines",
+            "- Lines starting with '-': deleted lines (exist in OLD file)",
+            "- Lines starting with '+': added lines (exist in NEW file)",
+            "",
+            "### HOW TO CALCULATE LINE NUMBERS:",
+            "",
+            "STEP 1: Parse the hunk header",
+            "Example: @@ -83,16 +83,6 @@",
+            "- OLD file starts at line 83, has 16 lines in this hunk",
+            "- NEW file starts at line 83, has 6 lines in this hunk",
+            "",
+            "STEP 2: Count lines from the start number",
+            "- For DELETED lines (-): count from the OLD start number",
+            "- For ADDED lines (+): count from the NEW start number",
+            "- Context lines DON'T affect the count",
+            "",
+            "STEP 3: Report the line number where the specific issue occurs",
+            "",
+            "### DETAILED EXAMPLES:",
+            "",
+            "Example 1 - Single line change:",
+            '--- diff',
+            "@@ -554,7 +554,7 @@",
+            " ReactDOM.render(",
+            "   <ReduxProvider>",
+            "     <HashRouter>",
+            "-      <ConfigProvider locale=enUS>",
+            "+      <ConfigProvider locale=enUS errorBoundary={{}} key='111111112'>",
+            "         <PreviewPage />",
+            '---',
+            "Analysis:",
+            "- OLD file line 557: <ConfigProvider locale=enUS> (DELETED)",
+            "- NEW file line 557: <ConfigProvider with errorBoundary> (ADDED)",
+            "- Report issues with the new prop as line 557",
+            "",
+            "Example 2 - Multi-line deletion:",
+            '--- diff',
+            "@@ -83,16 +83,6 @@",
+            "     config",
+            "-      .plugin('icon-preview')",
+            "-      .use(HtmlWebpackPlugin, [",
+            "-        {{",
+            "-          inject: false,",
+            "-          templateParameters: {{}},",
+            "-          template: require.resolve('./public/icon-preview.html'),",
+            "-          filename: 'icon-preview.html',",
+            "-        }},",
+            "-      ]);",
+            '---',
+            "Analysis:",
+            "- Line 83: config (context)",
+            "- Line 84: .plugin('icon-preview') (DELETED) - Report plugin issues as 84",
+            "- Line 85: .use(HtmlWebpackPlugin, [) (DELETED) - Report use issues as 85",
+            "- Line 86: {{ (DELETED) - Report this line as 86",
+            "",
+            "Example 3 - Multiple additions:",
+            '--- diff',
+            "@@ -10,2 +10,4 @@",
+            " function foo() {{",
+            "-  return 1;",
+            "+  const x = 1;",
+            "+  return x;",
+            " }}",
+            '---',
+            "Analysis:",
+            "- Line 11: return 1; (DELETED from OLD)",
+            "- Line 11: const x = 1; (ADDED to NEW) - Report issues as 11",
+            "- Line 12: return x; (ADDED to NEW) - Report issues as 12",
+            "",
+            "### YOUR TASK:",
+            "For EACH issue you find:",
+            "1. Identify the SPECIFIC line that has the problem",
+            "2. Determine if it's a + line (use NEW file number) or - line (use OLD file number)",
+            "3. Count from the hunk header to get the exact line number",
+            "4. NEVER use null unless you absolutely cannot determine the line",
+            "",
+            "## Diff Content to Review:",
+            '--- diff',
+            diff_content,
+            '---',
+            "",
+            "## Output Format (JSON only):",
+            "{",
+            '  "reviews": [',
+            '    {',
+            '      "line_number": <exact line number>,',
+            '      "severity": <"critical" | "warning" | "suggestion">,',
+            '      "description": "<describe the issue and mention which line>"',
+            '    }',
+            '  ]',
+            '}',
+            "",
+            "Review focus:",
+            "1. Bugs and logic errors",
+            "2. Security vulnerabilities",
+            "3. Performance issues",
+            "4. Code quality and maintainability",
+            "5. Best practices violations",
+            "",
+            "REMEMBER: Accurate line numbers are CRITICAL!",
+        ]
 
-## File Path
-{file_path}
-
-## Change Type
-{change_type}
-
-## Review Rules
-{rules_text}
-
-## Diff Content
-```diff
-{diff_content}
-```
-
-Please analyze this diff and provide feedback. Output must be JSON with the following structure:
-{{
-  "reviews": [
-    {{
-      "line_number": <line number or null>,
-      "severity": <"critical" | "warning" | "suggestion">,
-      "description": "<detailed description of the issue or suggestion>"
-    }}
-  ]
-}}
-
-Focus on:
-1. Bugs and logic errors
-2. Security vulnerabilities
-3. Performance issues
-4. Code quality and maintainability
-5. Best practices violations
-"""
-        return prompt
+        return "\\n".join(prompt_parts)
 
     def _parse_detailed_file_review(self, response: str, file_path: str) -> List[Dict[str, Any]]:
         """解析详细的文件审查响应"""
         try:
             data = json.loads(response)
             reviews = data.get("reviews", [])
-
+            print(reviews)
             result = []
             for review in reviews:
                 result.append({
