@@ -387,6 +387,7 @@ class MainWindow(QMainWindow):
         self.comment_panel.setMinimumWidth(350)
         self.comment_panel.publish_comment_requested.connect(self._on_publish_comment)
         self.comment_panel.ai_review_requested.connect(self._on_ai_review)
+        self.comment_panel.jump_to_comment_requested.connect(self._on_jump_to_comment)
         splitter.addWidget(self.comment_panel)
 
         # 设置分割器比例
@@ -705,3 +706,8 @@ class MainWindow(QMainWindow):
         """AI审查失败回调"""
         self.comment_panel.on_ai_review_error(error_msg)
         self.status_bar.showMessage("AI审查失败")
+
+    def _on_jump_to_comment(self, file_path: str, line_number: int):
+        """处理跳转到评论位置"""
+        self.diff_viewer.jump_to_file_and_line(file_path, line_number)
+        self.status_bar.showMessage(f"已跳转到 {file_path}:{line_number}")

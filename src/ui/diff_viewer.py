@@ -438,6 +438,87 @@ class CodeDiffViewer(QTextEdit):
             cr.height(),
         )
 
+    def jump_to_line(self, line_number: int):
+        """
+        跳转到指定行号
+
+        Args:
+            line_number: 目标行号
+        """
+        # 查找包含该行号的块
+        document = self.document()
+        block = document.begin()
+        block_number = 0
+
+        while block.isValid():
+            if block_number in self.line_info:
+                old_line, new_line, line_type = self.line_info[block_number]
+                # 检查是否匹配目标行号
+                if new_line == line_number or old_line == line_number:
+                    # 找到了，滚动到该位置
+                    cursor = QTextCursor(block)
+                    self.setTextCursor(cursor)
+                    # 手动滚动使该行居中
+                    self._center_cursor_on_line(cursor.block())
+                    # 高亮显示该行
+                    self._highlight_line(cursor)
+                    return
+            block = block.next()
+            block_number += 1
+
+    def _center_cursor_on_line(self, block):
+        """手动滚动使指定块居中"""
+        # 获取块的几何信息
+        layout = self.document().documentLayout()
+        block_rect = layout.blockBoundingRect(block)
+
+        # 计算滚动位置使块居中
+        scrollbar = self.verticalScrollBar()
+        viewport_height = self.viewport().height()
+
+        # 当前滚动位置
+        current_scroll = scrollbar.value()
+        # 块相对于文档顶部的位置
+        block_top = int(block_rect.top())
+
+        # 计算新的滚动位置使块居中
+        new_scroll = block_top - viewport_height // 2 + int(block_rect.height()) // 2
+
+        # 设置滚动位置
+        scrollbar.setValue(new_scroll)
+
+    def _highlight_line(self, cursor: QTextCursor):
+        """临时高亮显示当前行"""
+        # 保存原始光标位置
+        original_position = cursor.position()
+
+        # 选择整行
+        cursor.select(QTextCursor.SelectionType.LineUnderCursor)
+
+        # 创建选区（额外格式）
+        extra_selections = self.extraSelections()
+
+        # 创建高亮格式
+        highlight_format = QTextCharFormat()
+        highlight_format.setBackground(QColor("#fff3cd"))  # 黄色高亮
+
+        # 创建高亮选区
+        highlight = QTextEdit.ExtraSelection()
+        highlight.cursor = cursor
+        highlight.format = highlight_format
+
+        # 添加高亮
+        extra_selections.append(highlight)
+        self.setExtraSelections(extra_selections)
+
+        # 1秒后清除高亮
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(1000, lambda: self._clear_highlight())
+
+    def _clear_highlight(self):
+        """清除行高亮"""
+        self.setExtraSelections([])
+
 
 class DiffViewerPanel(QWidget):
     """Diff查看器面板 - 包含文件选择和代码显示"""
@@ -587,3 +668,29 @@ class DiffViewerPanel(QWidget):
         self.current_file_index = -1
         self.stats_label.setText("无文件变更")
         self.status_label.clear()
+
+    def jump_to_file_and_line(self, file_path: str, line_number: int):
+        """
+        跳转到指定文件和行号
+
+        Args:
+            file_path: 文件路径
+            line_number: 行号
+        """
+        # 查找匹配的文件
+        target_index = -1
+        for i, diff_file in enumerate(self.diff_files):
+            # 检查 old_path 和 new_path 是否匹配
+            if file_path in (diff_file.old_path, diff_file.new_path):
+                target_index = i
+                break
+
+        if target_index < 0:
+            # 未找到匹配文件
+            return
+
+        # 切换到目标文件
+        self.file_combo.setCurrentIndex(target_index)
+
+        # 跳转到指定行
+        self.diff_viewer.jump_to_line(line_number)

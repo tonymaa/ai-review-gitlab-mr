@@ -92,9 +92,10 @@ class CommentEditor(QWidget):
 class CommentListWidget(QListWidget):
     """评论列表组件"""
 
-    # 信号：删除评论、编辑评论
+    # 信号：删除评论、编辑评论、跳转到评论位置
     delete_requested = pyqtSignal(int)  # index
     edit_requested = pyqtSignal(int)  # index
+    jump_to_comment = pyqtSignal(str, int)  # (file_path, line_number)
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -117,6 +118,29 @@ class CommentListWidget(QListWidget):
         # 启用右键菜单
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_context_menu)
+
+        # 连接双击事件
+        self.itemDoubleClicked.connect(self._on_item_double_clicked)
+
+    def _on_item_double_clicked(self, item: QListWidgetItem):
+        """处理双击事件"""
+        if not item:
+            return
+
+        # 获取评论索引
+        comment_index = item.data(Qt.ItemDataRole.UserRole)
+        if comment_index is None:
+            return
+
+        # 从父级获取评论对象
+        parent_panel = self.parent()
+        while parent_panel and not isinstance(parent_panel, CommentPanel):
+            parent_panel = parent_panel.parent()
+
+        if parent_panel and 0 <= comment_index < len(parent_panel.local_comments):
+            comment = parent_panel.local_comments[comment_index]
+            if comment.file_path and comment.line_number:
+                self.jump_to_comment.emit(comment.file_path, comment.line_number)
 
     def _show_context_menu(self, pos):
         """显示右键菜单"""
@@ -181,6 +205,8 @@ class CommentPanel(QWidget):
     publish_comment_requested = pyqtSignal(str, str, int, str)  # (file_path, content, line, line_type)
     # 信号：请求AI审查
     ai_review_requested = pyqtSignal()  # 无参数，审查当前MR的diff
+    # 信号：跳转到指定评论位置
+    jump_to_comment_requested = pyqtSignal(str, int)  # (file_path, line_number)
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -224,6 +250,7 @@ class CommentPanel(QWidget):
         self.comment_list = CommentListWidget()
         self.comment_list.delete_requested.connect(self._on_delete_comment)
         self.comment_list.edit_requested.connect(self._on_edit_comment)
+        self.comment_list.jump_to_comment.connect(self._on_jump_to_comment)
         comments_layout.addWidget(self.comment_list)
 
         # 发布全部按钮
@@ -484,3 +511,8 @@ class CommentPanel(QWidget):
         self.ai_review_btn.setEnabled(True)
         self.ai_review_btn.setText("AI 评论")
         QMessageBox.critical(self, "AI审查失败", f"AI审查失败:\n\n{error_msg}")
+
+    def _on_jump_to_comment(self, file_path: str, line_number: int):
+        """处理跳转到评论位置"""
+        # 发射信号给主窗口处理
+        self.jump_to_comment_requested.emit(file_path, line_number)
