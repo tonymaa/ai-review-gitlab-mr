@@ -510,6 +510,14 @@ class MainWindow(QMainWindow):
         refresh_action.triggered.connect(self._on_refresh)
         toolbar.addAction(refresh_action)
 
+        # 与我相关的MR
+        self.related_mr_action = QAction("与我相关的MR", self)
+        self.related_mr_action.setCheckable(True)
+        self.related_mr_action.triggered.connect(self._on_toggle_related_mr)
+        toolbar.addAction(self.related_mr_action)
+
+        toolbar.addSeparator()
+
         # 开始AI审查
         # self.review_action = QAction("AI审查", self)
         # self.review_action.setEnabled(False)
@@ -805,11 +813,19 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage("正在加载MR列表...")
             self.mr_list_widget.set_loading(True)
 
-            # 获取MR列表 (默认获取全部，让用户自己筛选)
-            mr_list = self.gitlab_client.list_merge_requests(
-                project_id=self.current_project_id,
-                state="all",
-            )
+            # 根据"与我相关的MR"按钮状态选择获取方式
+            if self.related_mr_action.isChecked():
+                # 只获取与当前用户相关的MR
+                mr_list = self.gitlab_client.list_merge_requests_related_to_me(
+                    project_id=self.current_project_id,
+                    state="all",
+                )
+            else:
+                # 获取所有MR
+                mr_list = self.gitlab_client.list_merge_requests(
+                    project_id=self.current_project_id,
+                    state="all",
+                )
 
             self.mr_list_widget.load_merge_requests(mr_list)
             self.status_bar.showMessage(f"已加载 {len(mr_list)} 个MR")
@@ -900,6 +916,14 @@ class MainWindow(QMainWindow):
     def _on_refresh(self):
         """刷新"""
         if self.current_project_id:
+            self._load_merge_requests()
+
+    def _on_toggle_related_mr(self):
+        """切换“与我相关的MR”筛选"""
+        if self.current_project_id:
+            # 切换后重新加载MR列表
+            mode = "与我相关" if self.related_mr_action.isChecked() else "全部"
+            self.status_bar.showMessage(f"正在加载{mode}的MR...")
             self._load_merge_requests()
 
     def _on_auto_refresh(self):

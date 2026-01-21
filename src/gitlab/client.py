@@ -154,6 +154,83 @@ class GitLabClient:
             logger.error(f"列出MR失败: {e}")
             return []
 
+    def list_merge_requests_related_to_me(
+        self,
+        project_id: str | int,
+        state: str = "opened",
+        order_by: str = "updated_at",
+        sort: str = "desc",
+        per_page: int = 100,
+    ) -> List[MergeRequestInfo]:
+        """
+        列出与当前用户相关的Merge Requests（我是reviewer或assignee）
+
+        Args:
+            project_id: 项目ID或路径
+            state: MR状态 (opened, closed, merged, all)
+            order_by: 排序字段
+            sort: 排序方向
+            per_page: 每页数量
+
+        Returns:
+            MergeRequestInfo列表
+        """
+        try:
+            # 获取当前用户信息
+            current_user = self.get_current_user()
+            if not current_user:
+                logger.error("无法获取当前用户信息")
+                return []
+
+            current_user_id = current_user.get("id")
+
+            project = self._client.projects.get(project_id)
+            mrs = project.mergerequests.list(
+                state=state,
+                order_by=order_by,
+                sort=sort,
+                per_page=per_page,
+                get_all=True,  # 获取所有结果
+            )
+
+            mr_list = []
+            for mr in mrs:
+                mr_dict = mr.asdict()
+                mr_info = MergeRequestInfo.from_dict(mr_dict)
+
+                # 检查是否与当前用户相关（是 reviewer 或 assignee）
+                is_related = False
+
+                # 检查 assignees
+                assignees = mr_dict.get("assignees", [])
+                for assignee in assignees:
+                    if assignee.get("id") == current_user_id:
+                        is_related = True
+                        break
+
+                # 检查 reviewers
+                if not is_related:
+                    reviewers = mr_dict.get("reviewers", [])
+                    for reviewer in reviewers:
+                        if reviewer.get("id") == current_user_id:
+                            is_related = True
+                            break
+
+                if is_related:
+                    # 缓存到数据库
+                    if self.db_manager:
+                        self.db_manager.save_merge_request(mr_info.to_database_dict())
+                    mr_list.append(mr_info)
+
+            return mr_list
+
+        except GitlabGetError:
+            logger.error(f"项目不存在: {project_id}")
+            return []
+        except GitlabError as e:
+            logger.error(f"列出相关MR失败: {e}")
+            return []
+
     def get_merge_request(
         self,
         project_id: str | int,
