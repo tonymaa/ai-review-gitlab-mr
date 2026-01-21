@@ -77,19 +77,25 @@ class LineNumberArea(QWidget):
     # 信号：行被点击
     line_clicked = pyqtSignal(int, str)  # (line_number, line_type)
 
+    # 图标区域宽度
+    ICON_WIDTH = 20
+
     def __init__(self, editor: "CodeDiffViewer"):
         super().__init__(editor)
         self.editor = editor
         self.setMouseTracking(True)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setCursor(Qt.CursorShape.ArrowCursor)
+
+        # 当前悬停的行号
+        self._hovered_line = None
 
     def sizeHint(self) -> QSize:
         return QSize(self.editor.line_number_area_width(), 0)
 
     def paintEvent(self, event):
         """绘制行号"""
-        from PyQt6.QtGui import QPainter
-        from PyQt6.QtCore import QPointF
+        from PyQt6.QtGui import QPainter, QPainterPath, QPen, QFontMetricsF
+        from PyQt6.QtCore import QPointF, QRectF
 
         painter = QPainter(self)
         painter.fillRect(event.rect(), QColor("#f1f3f5"))
@@ -151,7 +157,11 @@ class LineNumberArea(QWidget):
                     # 绘制背景
                     painter.fillRect(0, int(block_rect.top()), self.width(), int(block_rect.height()), bg_color)
 
-                    # 显示行号
+                    # 绘制评论图标（仅当鼠标悬停在该行时）
+                    if block_number == self._hovered_line:
+                        self._draw_comment_icon(painter, block_rect)
+
+                    # 显示行号（在图标右侧）
                     if new_line is not None:
                         line_num = str(new_line)
                     elif old_line is not None:
@@ -161,9 +171,9 @@ class LineNumberArea(QWidget):
 
                     painter.setPen(text_color)
                     painter.drawText(
-                        0,
+                        self.ICON_WIDTH,  # 从图标区域后开始
                         int(block_rect.top()),
-                        self.width() - 5,
+                        self.width() - self.ICON_WIDTH - 5,
                         int(block_rect.height()),
                         Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
                         line_num,
@@ -171,6 +181,86 @@ class LineNumberArea(QWidget):
 
             block = block.next()
             block_number += 1
+
+    def _draw_comment_icon(self, painter, block_rect):
+        """绘制评论图标（气泡样式）"""
+        from PyQt6.QtGui import QPainterPath, QPen
+        from PyQt6.QtCore import QRectF
+
+        # 图标区域
+        icon_size = 14
+        x = (self.ICON_WIDTH - icon_size) / 2
+        y = block_rect.top() + (block_rect.height() - icon_size) / 2
+        rect = QRectF(x, y, icon_size, icon_size)
+
+        # 创建气泡路径
+        path = QPainterPath()
+
+        # 气泡主体（圆角矩形）
+        radius = 3
+        path.addRoundedRect(rect, radius, radius)
+
+        # 气泡尾巴（小三角形）
+        tail_size = 4
+        tail_x = rect.right() - 2
+        tail_y = rect.center().y()
+        path.moveTo(tail_x, tail_y - tail_size / 2)
+        path.lineTo(tail_x + tail_size, tail_y)
+        path.lineTo(tail_x, tail_y + tail_size / 2)
+
+        # 填充气泡
+        painter.setPen(QPen(QColor("#6c757d"), 1.5))
+        painter.setBrush(QColor("#f8f9fa"))
+        painter.drawPath(path)
+
+        # 绘制三个小点表示评论
+        dot_color = QColor("#6c757d")
+        dot_radius = 1.2
+        center_y = rect.center().y()
+
+        for i in range(3):
+            dot_x = rect.left() + 3 + i * 4
+            painter.setPen(dot_color)
+            painter.setBrush(dot_color)
+            painter.drawEllipse(QRectF(dot_x - dot_radius, center_y - dot_radius,
+                                       dot_radius * 2, dot_radius * 2))
+
+    def mouseMoveEvent(self, event):
+        """处理鼠标移动（用于悬停效果）"""
+        from PyQt6.QtCore import QPointF
+
+        document = self.editor.document()
+        layout = document.documentLayout()
+        scrollbar = self.editor.verticalScrollBar()
+        offset_y = -scrollbar.value()
+        offset = QPointF(0, offset_y)
+
+        # 查找鼠标悬停的行
+        block = document.begin()
+        block_number = 0
+        mouse_y = event.position().y()
+
+        old_hovered = self._hovered_line
+        self._hovered_line = None
+
+        while block.isValid():
+            block_rect = layout.blockBoundingRect(block).translated(offset)
+            if block_rect.top() <= mouse_y <= block_rect.bottom():
+                if block_number in self.editor.line_info:
+                    self._hovered_line = block_number
+                break
+            block = block.next()
+            block_number += 1
+
+        # 更新光标样式
+        if self._hovered_line is not None:
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+        else:
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+
+        # 如果悬停行改变，重绘
+        if old_hovered != self._hovered_line:
+            self.update()
 
     def mousePressEvent(self, event):
         """处理鼠标点击"""
@@ -188,16 +278,19 @@ class LineNumberArea(QWidget):
         block = document.begin()
         block_number = 0
         click_y = event.position().y()
+        click_x = event.position().x()
 
         while block.isValid():
             block_rect = layout.blockBoundingRect(block).translated(offset)
             if block_rect.top() <= click_y <= block_rect.bottom():
                 # 找到了点击的块
                 if block_number in self.editor.line_info:
-                    old_line, new_line, line_type = self.editor.line_info[block_number]
-                    line_num = new_line if new_line is not None else old_line
-                    if line_num:
-                        self.line_clicked.emit(line_num, line_type)
+                    # 只有点击在图标区域内才触发
+                    if click_x <= self.ICON_WIDTH:
+                        old_line, new_line, line_type = self.editor.line_info[block_number]
+                        line_num = new_line if new_line is not None else old_line
+                        if line_num:
+                            self.line_clicked.emit(line_num, line_type)
                 break
             block = block.next()
             block_number += 1
@@ -315,8 +408,10 @@ class CodeDiffViewer(QTextEdit):
 
     def line_number_area_width(self) -> int:
         """计算行号区域宽度"""
+        # 包含图标宽度 + 行号宽度
+        icon_width = LineNumberArea.ICON_WIDTH
         digits = len(str(max(1, self.document().blockCount())))
-        return 40 + digits * self.fontMetrics().horizontalAdvance("9")
+        return icon_width + 40 + digits * self.fontMetrics().horizontalAdvance("9")
 
     def update_line_number_area_width(self):
         """更新行号区域宽度"""

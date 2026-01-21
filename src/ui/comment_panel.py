@@ -92,8 +92,9 @@ class CommentEditor(QWidget):
 class CommentListWidget(QListWidget):
     """评论列表组件"""
 
-    # 信号：删除评论
+    # 信号：删除评论、编辑评论
     delete_requested = pyqtSignal(int)  # index
+    edit_requested = pyqtSignal(int)  # index
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -106,6 +107,7 @@ class CommentListWidget(QListWidget):
             QListWidget::item {
                 padding: 8px;
                 border-bottom: 1px solid #dee2e6;
+                color: black;
             }
             QListWidget::item:hover {
                 background-color: #e9ecef;
@@ -125,11 +127,15 @@ class CommentListWidget(QListWidget):
             return
 
         menu = QMenu(self)
+        edit_action = menu.addAction("编辑")
         delete_action = menu.addAction("删除")
 
         # 菜单操作
         action = menu.exec(self.mapToGlobal(pos))
-        if action == delete_action:
+        if action == edit_action:
+            index = self.row(item)
+            self.edit_requested.emit(index)
+        elif action == delete_action:
             index = self.row(item)
             self.delete_requested.emit(index)
 
@@ -185,6 +191,9 @@ class CommentPanel(QWidget):
         # 本地评论列表
         self.local_comments: list[ReviewComment] = []
 
+        # 当前正在编辑的评论索引（None表示新建评论）
+        self._editing_index: Optional[int] = None
+
         self._setup_ui()
 
     def _setup_ui(self):
@@ -204,11 +213,12 @@ class CommentPanel(QWidget):
         layout.addWidget(self.comment_editor)
 
         # 已添加的评论列表
-        comments_group = QGroupBox("待发布评论 (右键删除)")
+        comments_group = QGroupBox("待发布评论")
         comments_layout = QVBoxLayout(comments_group)
 
         self.comment_list = CommentListWidget()
         self.comment_list.delete_requested.connect(self._on_delete_comment)
+        self.comment_list.edit_requested.connect(self._on_edit_comment)
         comments_layout.addWidget(self.comment_list)
 
         # 发布全部按钮
@@ -265,19 +275,31 @@ class CommentPanel(QWidget):
             QMessageBox.warning(self, "提示", "请先点击代码行选择评论位置")
             return
 
-        # 创建评论对象
-        comment = ReviewComment(
-            id=None,
-            content=content,
-            line_number=self.current_line_number,
-            file_path=self.current_file_path,
-            comment_type="user_comment",
-        )
+        # 检查是否是编辑模式
+        if self._editing_index is not None:
+            # 编辑现有评论
+            if 0 <= self._editing_index < len(self.local_comments):
+                self.local_comments[self._editing_index].content = content
+                self._refresh_comment_list()
+            # 重置编辑模式
+            self._editing_index = None
+        else:
+            # 创建新评论
+            comment = ReviewComment(
+                id=None,
+                content=content,
+                line_number=self.current_line_number,
+                file_path=self.current_file_path,
+                comment_type="user_comment",
+            )
 
-        # 使用当前列表长度作为索引
-        index = len(self.local_comments)
-        self.local_comments.append(comment)
-        self.comment_list.add_comment(comment, index)
+            # 使用当前列表长度作为索引
+            index = len(self.local_comments)
+            self.local_comments.append(comment)
+            self.comment_list.add_comment(comment, index)
+
+        # 清空编辑器
+        self.comment_editor.clear()
 
     def _on_delete_comment(self, list_index: int):
         """处理删除评论"""
@@ -286,12 +308,41 @@ class CommentPanel(QWidget):
         if item:
             comment_index = item.data(Qt.ItemDataRole.UserRole)
             if 0 <= comment_index < len(self.local_comments):
+                # 如果正在编辑的是被删除的评论，重置编辑模式
+                if self._editing_index == comment_index:
+                    self._editing_index = None
+                    self.comment_editor.clear()
+
                 # 删除评论
                 del self.local_comments[comment_index]
                 self.comment_list.takeItem(list_index)
 
                 # 重新构建列表以更新索引
                 self._refresh_comment_list()
+
+    def _on_edit_comment(self, list_index: int):
+        """处理编辑评论"""
+        # 获取实际的评论索引
+        item = self.comment_list.item(list_index)
+        if item:
+            comment_index = item.data(Qt.ItemDataRole.UserRole)
+            if 0 <= comment_index < len(self.local_comments):
+                comment = self.local_comments[comment_index]
+
+                # 设置编辑模式
+                self._editing_index = comment_index
+
+                # 将评论内容加载到编辑器
+                self.current_file_path = comment.file_path
+                self.current_line_number = comment.line_number
+                self.current_line_type = "new"  # 默认为新行
+
+                # 更新编辑器标题为编辑模式
+                self.comment_editor.location_label.setText(f"编辑评论 - {comment.file_path}:{comment.line_number}")
+                self.comment_editor.comment_text.setPlainText(comment.content)
+
+                # 聚焦到编辑器
+                self.comment_text.setFocus()
 
     def _refresh_comment_list(self):
         """刷新评论列表（更新索引）"""
@@ -304,6 +355,7 @@ class CommentPanel(QWidget):
         self.current_file_path = None
         self.current_line_number = None
         self.current_line_type = None
+        self._editing_index = None  # 重置编辑模式
         self.comment_editor.clear()
 
     def _on_publish_all(self):
