@@ -1,85 +1,85 @@
-"""AI审查提示词模板"""
+"""AI Code Review Prompt Templates"""
 
-# 系统提示词 - 定义AI的角色和行为
-SYSTEM_PROMPT = """你是一个专业的代码审查助手，具有深厚的软件开发经验和最佳实践知识。
+# System Prompt - Define AI's role and behavior
+SYSTEM_PROMPT = """You are a professional code review assistant with extensive software development experience and knowledge of best practices.
 
-你的任务是：
-1. 仔细审查提供的代码变更
-2. 识别潜在的问题、安全漏洞和性能问题
-3. 提供改进建议和最佳实践建议
-4. 保持建议的具体性、可操作性和建设性
+Your task is to:
+1. Carefully review the provided code changes
+2. Identify potential issues, security vulnerabilities, and performance problems
+3. Provide improvement suggestions and best practice recommendations
+4. Keep your feedback specific, actionable, and constructive
 
-审查时请注意以下方面：
-- 代码质量和可读性
-- 潜在的bug和逻辑错误
-- 安全漏洞（SQL注入、XSS、认证问题等）
-- 性能问题和优化机会
-- 错误处理和边界条件
-- 代码重复和可维护性
-- 命名规范和代码风格
-- 缺失的注释或文档
-- 测试覆盖度建议
+When reviewing, pay attention to:
+- Code quality and readability
+- Potential bugs and logic errors
+- Security vulnerabilities (SQL injection, XSS, authentication issues, etc.)
+- Performance issues and optimization opportunities
+- Error handling and edge cases
+- Code duplication and maintainability
+- Naming conventions and code style
+- Missing comments or documentation
+- Test coverage recommendations
 
-请以友好、专业的语气提供反馈，重点关注真正需要改进的地方。
+Please provide feedback in a friendly, professional tone, focusing on areas that truly need improvement.
 """
 
-# 用户提示词模板
-REVIEW_PROMPT_TEMPLATE = """请审查以下代码变更：
+# User prompt template
+REVIEW_PROMPT_TEMPLATE = """Please review the following code changes:
 
-## 分支信息
-- 源分支: {source_branch}
-- 目标分支: {target_branch}
+## Branch Information
+- Source branch: {source_branch}
+- Target branch: {target_branch}
 
-## 变更描述
+## Change Description
 {description}
 
-## 文件变更
+## File Changes
 {file_changes}
 
-## 审查规则
+## Review Rules
 {review_rules}
 
-请提供结构化的审查反馈，包括：
-1. 整体评估摘要
-2. 按严重程度分类的问题列表（严重/警告/建议）
-3. 针对每个问题的具体位置和改进建议
-4. 整体评分（1-10分）
+Please provide structured review feedback, including:
+1. Overall assessment summary
+2. Issues list categorized by severity (critical/warning/suggestion)
+3. Specific location and improvement suggestions for each issue
+4. Overall score (1-10)
 
-输出格式要求使用JSON，包含以下字段：
-- summary: 整体评估摘要
-- overall_score: 整体评分(1-10)
-- issues: 严重问题列表，每项包含 file_path, line_number, description
-- warnings: 警告列表，每项包含 file_path, line_number, description
-- suggestions: 改进建议列表，每项包含 file_path, line_number, description
+Output format must be JSON with the following fields:
+- summary: Overall assessment summary
+- overall_score: Overall score (1-10)
+- issues: Critical issues list, each containing file_path, line_number, description
+- warnings: Warnings list, each containing file_path, line_number, description
+- suggestions: Improvement suggestions list, each containing file_path, line_number, description
 """
 
-# 单个文件审查模板
-FILE_REVIEW_TEMPLATE = """请审查以下文件的代码变更：
+# Single file review template
+FILE_REVIEW_TEMPLATE = """Please review the code changes for the following file:
 
-## 文件路径
+## File Path
 {file_path}
 
-## 变更类型
+## Change Type
 {change_type}
 
-## Diff内容
+## Diff Content
 ```diff
 {diff_content}
 ```
 
-请识别此文件中的问题和改进机会。输出JSON格式。"""
+Please identify issues and improvement opportunities in this file. Output in JSON format."""
 
-# 简化的审查模板（用于快速审查）
-QUICK_REVIEW_TEMPLATE = """快速审查以下代码变更：
+# Simplified review template (for quick review)
+QUICK_REVIEW_TEMPLATE = """Quick review of the following code changes:
 
 {diff_summary}
 
-重点关注：
-1. 明显的bug或逻辑错误
-2. 安全问题
-3. 严重的性能问题
+Focus on:
+1. Obvious bugs or logic errors
+2. Security issues
+3. Serious performance problems
 
-输出JSON格式。"""
+Output in JSON format."""
 
 
 def build_review_prompt(
@@ -91,25 +91,25 @@ def build_review_prompt(
     review_rules: list[str],
 ) -> str:
     """
-    构建完整的审查提示词
+    Build complete review prompt
 
     Args:
-        title: MR标题
-        description: MR描述
-        source_branch: 源分支
-        target_branch: 目标分支
-        file_changes: 文件变更摘要
-        review_rules: 审查规则列表
+        title: MR title
+        description: MR description
+        source_branch: Source branch
+        target_branch: Target branch
+        file_changes: File changes summary
+        review_rules: Review rules list
 
     Returns:
-        完整的提示词字符串
+        Complete prompt string
     """
     rules_text = "\n".join(f"- {rule}" for rule in review_rules)
 
     return REVIEW_PROMPT_TEMPLATE.format(
         source_branch=source_branch,
         target_branch=target_branch,
-        description=description or "无描述",
+        description=description or "No description",
         file_changes=file_changes,
         review_rules=rules_text,
     )
@@ -121,15 +121,15 @@ def build_file_review_prompt(
     diff_content: str,
 ) -> str:
     """
-    构建单文件审查提示词
+    Build single file review prompt
 
     Args:
-        file_path: 文件路径
-        change_type: 变更类型（新增/修改/删除）
-        diff_content: Diff内容
+        file_path: File path
+        change_type: Change type (new/modified/deleted)
+        diff_content: Diff content
 
     Returns:
-        提示词字符串
+        Prompt string
     """
     return FILE_REVIEW_TEMPLATE.format(
         file_path=file_path,
@@ -140,12 +140,12 @@ def build_file_review_prompt(
 
 def build_quick_review_prompt(diff_summary: str) -> str:
     """
-    构建快速审查提示词
+    Build quick review prompt
 
     Args:
-        diff_summary: Diff摘要
+        diff_summary: Diff summary
 
     Returns:
-        提示词字符串
+        Prompt string
     """
     return QUICK_REVIEW_TEMPLATE.format(diff_summary=diff_summary)
