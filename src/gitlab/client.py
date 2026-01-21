@@ -362,12 +362,24 @@ class GitLabClient:
             project = self._client.projects.get(project_id)
             mr = project.mergerequests.get(mr_iid)
 
+            # 获取MR的diff_refs（包含所需的SHA值）
+            changes = mr.changes()
+            diff_refs = changes.get("diff_refs", {})
+
+            # 构造line_code (格式: "{sha}_{line_type}_{line_number}")
+            # 使用head_sha作为line_code的前缀
+            head_sha = diff_refs.get("head_sha", "")
+            line_code = f"{head_sha}_{line_type}_{line_number}"
+
             # 构造位置参数
             position = {
+                "base_sha": diff_refs.get("base_sha"),
+                "start_sha": diff_refs.get("start_sha"),
+                "head_sha": diff_refs.get("head_sha"),
                 "position_type": "text",
-                "new_path": file_path if line_type == "new" else None,
-                "old_path": file_path if line_type == "old" else None,
-                "position_type": "text",
+                "new_path": file_path,
+                "old_path": file_path,
+                "line_code": line_code,
             }
 
             if line_type == "new":
@@ -375,9 +387,21 @@ class GitLabClient:
             else:
                 position["old_line"] = line_number
 
-            mr.discussions.create({"body": body, "position": position})
-            logger.info(f"成功为MR {mr_iid}的文件 {file_path}:{line_number} 添加行评论")
-            return True
+            try:
+                mr.discussions.create({"body": body, "position": position})
+                logger.info(f"成功为MR {mr_iid}的文件 {file_path}:{line_number} 添加行评论")
+                return True
+            except GitlabError as e:
+                # 如果行评论失败（可能是行号不存在），改为普通MR评论
+                error_msg = str(e)
+                if "line_code" in error_msg or "can't be blank" in error_msg:
+                    # 添加文件位置信息到评论内容，改为普通评论
+                    file_note_body = f"**File: {file_path}:{line_number}**\n\n{body}"
+                    mr.notes.create({"body": file_note_body})
+                    logger.info(f"行号不存在，已为MR {mr_iid}的文件 {file_path}:{line_number} 添加普通评论")
+                    return True
+                else:
+                    raise
 
         except GitlabError as e:
             logger.error(f"添加MR行评论失败: {e}")

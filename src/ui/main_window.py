@@ -107,7 +107,7 @@ class AIReviewWorker(QObject):
 
                         # 构建评论内容，包含严重程度
                         if description:
-                            content = f"**{severity.capitalize()}:** {description}"
+                            content = f"{severity.capitalize()}: {description}"
                             comments.append({
                                 "file_path": file_path,
                                 "line_number": line_number,
@@ -120,7 +120,7 @@ class AIReviewWorker(QObject):
             all_items = []
 
             for issue in result.critical_issues:
-                all_items.append(("critical", issue))
+                all_items.append(("warning", issue))
 
             for warning in result.warnings:
                 all_items.append(("warning", warning))
@@ -149,7 +149,7 @@ class AIReviewWorker(QObject):
                     comments.append({
                         "file_path": file_path,
                         "line_number": line_number,
-                        "content": f"**{severity.capitalize()}:** {description_part}",
+                        "content": f"{severity.capitalize()}: {description_part}",
                     })
 
         return comments
