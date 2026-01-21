@@ -29,10 +29,9 @@ from ..core.config import settings
 from ..core.database import DatabaseManager
 from ..gitlab.client import GitLabClient
 from ..gitlab.models import MergeRequestInfo, DiffFile, MRState
-from ..ai.reviewer import create_reviewer
 from .mr_list_widget import MRListWidget
 from .diff_viewer import DiffViewerPanel
-from .review_panel import ReviewPanel
+from .comment_panel import CommentPanel
 
 logger = logging.getLogger(__name__)
 
@@ -225,10 +224,10 @@ class MainWindow(QMainWindow):
         toolbar.addAction(refresh_action)
 
         # 开始AI审查
-        self.review_action = QAction("AI审查", self)
-        self.review_action.setEnabled(False)
-        self.review_action.triggered.connect(self._on_start_review)
-        toolbar.addAction(self.review_action)
+        # self.review_action = QAction("AI审查", self)
+        # self.review_action.setEnabled(False)
+        # self.review_action.triggered.connect(self._on_start_review)
+        # toolbar.addAction(self.review_action)
 
         toolbar.addSeparator()
 
@@ -257,12 +256,14 @@ class MainWindow(QMainWindow):
         # 中间：Diff查看器
         self.diff_viewer = DiffViewerPanel()
         self.diff_viewer.setMinimumWidth(400)
+        self.diff_viewer.line_clicked.connect(self._on_diff_line_clicked)
         splitter.addWidget(self.diff_viewer)
 
-        # 右侧：审查面板
-        self.review_panel = ReviewPanel()
-        self.review_panel.setMinimumWidth(350)
-        splitter.addWidget(self.review_panel)
+        # 右侧：评论面板
+        self.comment_panel = CommentPanel()
+        self.comment_panel.setMinimumWidth(350)
+        self.comment_panel.publish_comment_requested.connect(self._on_publish_comment)
+        splitter.addWidget(self.comment_panel)
 
         # 设置分割器比例
         splitter.setStretchFactor(0, 1)
@@ -386,7 +387,6 @@ class MainWindow(QMainWindow):
     def _on_mr_selected(self, mr: MergeRequestInfo):
         """处理MR选中"""
         self.current_mr = mr
-        self.review_action.setEnabled(True)
 
         try:
             # 获取MR详情和Diff
@@ -401,8 +401,8 @@ class MainWindow(QMainWindow):
             # 显示diff
             self.diff_viewer.load_diffs(self.current_diff_files)
 
-            # 清空审查面板
-            self.review_panel.clear()
+            # 清空评论面板
+            self.comment_panel._on_clear()
 
             self.status_bar.showMessage(f"已加载MR !{mr.iid} - {mr.title}")
 
@@ -410,37 +410,40 @@ class MainWindow(QMainWindow):
             logger.error(f"加载MR详情失败: {e}")
             self.status_bar.showMessage(f"加载失败: {e}")
 
-    def _on_start_review(self):
-        """开始AI审查"""
-        if not self.current_mr or not self.current_diff_files:
-            return
+    def _on_diff_line_clicked(self, line_number: int, line_type: str, file_path: str):
+        """处理diff行点击"""
+        # 将位置信息传递给评论面板
+        self.comment_panel.set_code_location(file_path, line_number, line_type)
+        self.status_bar.showMessage(f"已选择: {file_path}:{line_number}")
 
-        if not settings.ai.openai.api_key and settings.ai.provider == "openai":
-            QMessageBox.warning(self, "配置错误", "请先配置OpenAI API Key")
+    def _on_publish_comment(self, file_path: str, content: str, line_number: int, line_type: str):
+        """处理发布评论到GitLab"""
+        if not self.gitlab_client or not self.current_mr:
+            QMessageBox.warning(self, "错误", "未连接到GitLab或未选择MR")
             return
 
         try:
-            # 创建AI审查器
-            self.ai_reviewer = create_reviewer(
-                provider=settings.ai.provider,
-                api_key=settings.ai.openai.api_key,
-                model=settings.ai.openai.model,
-                base_url=settings.ai.openai.base_url,
-                temperature=settings.ai.openai.temperature,
-                max_tokens=settings.ai.openai.max_tokens,
+            # 确定line_type对应的GitLab参数
+            # "new" -> 新增行, "old" -> 删除行, "context" -> 上下文行
+            position_type = "new" if line_type == "addition" else "old" if line_type == "deletion" else "new"
+
+            success = self.gitlab_client.create_merge_request_discussion(
+                project_id=self.current_project_id,
+                mr_iid=self.current_mr.iid,
+                body=content,
+                file_path=file_path,
+                line_number=line_number,
+                line_type=position_type,
             )
 
-            # 开始审查
-            self.review_panel.start_review(
-                reviewer=self.ai_reviewer,
-                mr=self.current_mr,
-                diff_files=self.current_diff_files,
-                review_rules=settings.ai.review_rules,
-            )
+            if success:
+                self.status_bar.showMessage(f"评论已发布到 {file_path}:{line_number}")
+            else:
+                QMessageBox.warning(self, "发布失败", "评论发布失败，请检查权限")
 
         except Exception as e:
-            logger.error(f"启动AI审查失败: {e}")
-            QMessageBox.critical(self, "审查失败", f"无法启动AI审查:\n\n{e}")
+            logger.error(f"发布评论失败: {e}")
+            QMessageBox.critical(self, "发布失败", f"发布评论时发生错误:\n\n{e}")
 
     def _on_refresh(self):
         """刷新"""

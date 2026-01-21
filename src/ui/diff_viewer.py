@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
     QSplitter,
     QFrame,
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QSize
+from PyQt6.QtCore import Qt, pyqtSignal, QSize, QRect
 from PyQt6.QtGui import (
     QTextCursor,
     QTextCharFormat,
@@ -72,53 +72,143 @@ class DiffHighlighter(QSyntaxHighlighter):
 
 
 class LineNumberArea(QWidget):
-    """行号区域组件"""
+    """行号区域组件 - 可点击选择行"""
+
+    # 信号：行被点击
+    line_clicked = pyqtSignal(int, str)  # (line_number, line_type)
 
     def __init__(self, editor: "CodeDiffViewer"):
         super().__init__(editor)
         self.editor = editor
-        self.setFixedWidth(80)
+        self.setMouseTracking(True)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
 
     def sizeHint(self) -> QSize:
         return QSize(self.editor.line_number_area_width(), 0)
 
     def paintEvent(self, event):
         """绘制行号"""
+        from PyQt6.QtGui import QPainter
+        from PyQt6.QtCore import QPointF
+
         painter = QPainter(self)
-        painter.fillRect(event.rect(), QColor("#f8f9fa"))
+        painter.fillRect(event.rect(), QColor("#f1f3f5"))
 
-        block = self.editor.firstVisibleBlock()
-        block_number = block.blockNumber()
-        top = self.editor.blockBoundingGeometry(block).translated(self.editor.contentOffset()).top()
-        bottom = top + self.editor.blockBoundingRect(block).height()
+        # 获取文档和布局
+        document = self.editor.document()
+        layout = document.documentLayout()
 
-        while block.isValid() and top <= event.rect().bottom():
-            if block.isVisible() and bottom >= event.rect().top():
-                number = str(block_number + 1)
-                painter.setPen(QColor("#6c757d"))
-                painter.setFont(QFont("Consolas", 9))
-                painter.drawText(
-                    0,
-                    int(top),
-                    self.width() - 5,
-                    self.editor.fontMetrics().height(),
-                    Qt.AlignmentFlag.AlignRight,
-                    number,
-                )
+        # 计算滚动偏移（使用 scrollbar 的位置）
+        scrollbar = self.editor.verticalScrollBar()
+        offset_y = -scrollbar.value()
+        offset = QPointF(0, offset_y)
+
+        # 从文档开始查找第一个可见块
+        block = document.begin()
+        block_number = 0
+
+        # 找到第一个可见的块（在视口上方的块跳过）
+        while block.isValid():
+            block_rect = layout.blockBoundingRect(block).translated(offset)
+            if block_rect.bottom() >= 0:
+                # 找到了第一个可见块
+                break
+            block = block.next()
+            block_number += 1
+        else:
+            return  # 没有可见块
+
+        # 绘制可见的行号
+        font = QFont("Consolas", 9)
+        painter.setFont(font)
+
+        while block.isValid():
+            block_rect = layout.blockBoundingRect(block).translated(offset)
+
+            if block_rect.top() > event.rect().bottom():
+                break  # 超出可见区域
+
+            if block.isVisible() and block_rect.bottom() >= event.rect().top():
+                # 获取行信息
+                line_info = self.editor.line_info.get(block_number)
+                if line_info:
+                    old_line, new_line, line_type = line_info
+
+                    # 根据行类型选择颜色
+                    if line_type == "addition":
+                        bg_color = QColor("#d4edda")
+                        text_color = QColor("#155724")
+                    elif line_type == "deletion":
+                        bg_color = QColor("#f8d7da")
+                        text_color = QColor("#721c24")
+                    elif line_type == "header":
+                        bg_color = QColor("#e2e3e5")
+                        text_color = QColor("#383d41")
+                    else:
+                        bg_color = QColor("#ffffff")
+                        text_color = QColor("#6c757d")
+
+                    # 绘制背景
+                    painter.fillRect(0, int(block_rect.top()), self.width(), int(block_rect.height()), bg_color)
+
+                    # 显示行号
+                    if new_line is not None:
+                        line_num = str(new_line)
+                    elif old_line is not None:
+                        line_num = str(old_line)
+                    else:
+                        line_num = " "
+
+                    painter.setPen(text_color)
+                    painter.drawText(
+                        0,
+                        int(block_rect.top()),
+                        self.width() - 5,
+                        int(block_rect.height()),
+                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                        line_num,
+                    )
 
             block = block.next()
-            top = bottom
-            bottom = top + self.editor.blockBoundingRect(block).height()
             block_number += 1
 
+    def mousePressEvent(self, event):
+        """处理鼠标点击"""
+        from PyQt6.QtCore import QPointF
 
-from PyQt6.QtGui import QPainter
+        document = self.editor.document()
+        layout = document.documentLayout()
+
+        # 计算滚动偏移（使用 scrollbar 的位置）
+        scrollbar = self.editor.verticalScrollBar()
+        offset_y = -scrollbar.value()
+        offset = QPointF(0, offset_y)
+
+        # 从文档开始查找被点击的块
+        block = document.begin()
+        block_number = 0
+        click_y = event.position().y()
+
+        while block.isValid():
+            block_rect = layout.blockBoundingRect(block).translated(offset)
+            if block_rect.top() <= click_y <= block_rect.bottom():
+                # 找到了点击的块
+                if block_number in self.editor.line_info:
+                    old_line, new_line, line_type = self.editor.line_info[block_number]
+                    line_num = new_line if new_line is not None else old_line
+                    if line_num:
+                        self.line_clicked.emit(line_num, line_type)
+                break
+            block = block.next()
+            block_number += 1
+
+        super().mousePressEvent(event)
 
 
 class CodeDiffViewer(QTextEdit):
     """代码Diff查看器"""
 
-    # 信号：行被点击
+    # 信号：行被点击 (从行号区域点击触发)
     line_clicked = pyqtSignal(int, str)  # (line_number, line_type)
 
     def __init__(self, parent: Optional[QWidget] = None):
@@ -137,8 +227,9 @@ class CodeDiffViewer(QTextEdit):
             QTextEdit {
                 background-color: #ffffff;
                 border: 1px solid #dee2e6;
-                border-radius: 4px;
-                padding: 8px;
+                border-right: none;
+                border-radius: 4px 0 0 4px;
+                padding: 0px;
             }
         """)
 
@@ -148,11 +239,24 @@ class CodeDiffViewer(QTextEdit):
         # 行信息映射 (block_number -> (old_line, new_line, line_type))
         self.line_info: dict[int, Tuple[Optional[int], Optional[int], str]] = {}
 
-        # 安装事件过滤器
-        self.viewport().installEventFilter(self)
+        # 创建行号区域
+        self.line_number_area = LineNumberArea(self)
+        self.line_number_area.line_clicked.connect(self.line_clicked.emit)
+
+        # 连接信号 - 使用QTextEdit的信号
+        self.textChanged.connect(self.update_line_number_area_width)
+        # 注意：QTextEdit没有updateRequest信号，我们需要通过其他方式更新行号区域
+        # 使用scrollbar的信号来更新
+        self.verticalScrollBar().valueChanged.connect(self.line_number_area.update)
+
+        # 获取document的blockCountChanged信号
+        self.document().blockCountChanged.connect(self.update_line_number_area_width)
 
         # 设置高亮器
         self.highlighter = DiffHighlighter(self.document())
+
+        # 设置边距为行号区域宽度
+        self.setViewportMargins(self.line_number_area_width(), 0, 0, 0)
 
     def load_diff_file(self, diff_file: DiffFile):
         """
@@ -209,40 +313,35 @@ class CodeDiffViewer(QTextEdit):
         # 显示内容
         self.setPlainText("\n".join(display_lines))
 
-    def mousePressEvent(self, event):
-        """处理鼠标点击事件"""
-        super().mousePressEvent(event)
-
-        # 获取点击的行
-        cursor = self.cursorForPosition(event.pos())
-        block_number = cursor.blockNumber()
-
-        # 获取行信息
-        if block_number in self.line_info:
-            old_line, new_line, line_type = self.line_info[block_number]
-            # 发射信号
-            line_num = new_line if new_line is not None else old_line
-            if line_num:
-                self.line_clicked.emit(line_num, line_type)
-
     def line_number_area_width(self) -> int:
         """计算行号区域宽度"""
         digits = len(str(max(1, self.document().blockCount())))
-        space = 20
-        return 50 + digits * self.fontMetrics().horizontalAdvance("9")
+        return 40 + digits * self.fontMetrics().horizontalAdvance("9")
 
-    def update_line_number_area(self, rect: int, dy: int):
+    def update_line_number_area_width(self):
+        """更新行号区域宽度"""
+        self.setViewportMargins(self.line_number_area_width(), 0, 0, 0)
+
+    def update_line_number_area(self, rect: QRect, dy: int):
         """更新行号区域"""
         if dy:
-            self.scroll(0, dy)
-        else:
-            self.viewport().update(0, rect, self.width(), rect)
-            self.update()
+            self.line_number_area.scroll(0, dy)
+        self.line_number_area.update()
+
+        if rect.contains(self.viewport().rect()):
+            self.line_number_area.update(0, rect.y(), self.line_number_area.width(), rect.height())
 
     def resizeEvent(self, event):
         """处理窗口大小改变"""
         super().resizeEvent(event)
-        # 更新布局
+
+        cr = self.contentsRect()
+        self.line_number_area.setGeometry(
+            cr.left(),
+            cr.top(),
+            self.line_number_area_width(),
+            cr.height(),
+        )
 
 
 class DiffViewerPanel(QWidget):
@@ -283,10 +382,22 @@ class DiffViewerPanel(QWidget):
         file_selector_layout.addStretch()
         layout.addLayout(file_selector_layout)
 
-        # 代码查看器
+        # 代码查看器容器（包含行号条和代码区域）
+        viewer_container = QWidget()
+        viewer_container.setStyleSheet("background-color: #ffffff;")
+        viewer_layout = QHBoxLayout(viewer_container)
+        viewer_layout.setContentsMargins(0, 0, 0, 0)
+        viewer_layout.setSpacing(0)
+
+        # 创建代码查看器
         self.diff_viewer = CodeDiffViewer()
         self.diff_viewer.line_clicked.connect(self._on_line_clicked)
-        layout.addWidget(self.diff_viewer)
+
+        # 添加行号区域和编辑器
+        viewer_layout.addWidget(self.diff_viewer.line_number_area)
+        viewer_layout.addWidget(self.diff_viewer)
+
+        layout.addWidget(viewer_container)
 
         # 状态栏
         self.status_label = QLabel()
