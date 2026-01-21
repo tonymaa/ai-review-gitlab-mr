@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from functools import partial
 from typing import Optional
 from PyQt6.QtWidgets import (
     QMainWindow,
@@ -23,11 +24,12 @@ from PyQt6.QtWidgets import (
     QStatusBar,
     QProgressDialog,
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QThread, QObject
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QThread, QObject, QEvent
 from PyQt6.QtGui import QAction, QIcon, QKeySequence
 
 from ..core.config import settings
 from ..core.database import DatabaseManager
+from ..core.project_cache import ProjectCache
 from ..gitlab.client import GitLabClient
 from ..gitlab.models import MergeRequestInfo, DiffFile, MRState
 from ..ai.reviewer import create_reviewer, ReviewIssue
@@ -225,6 +227,9 @@ class MainWindow(QMainWindow):
         self.db_manager: Optional[DatabaseManager] = None
         self.ai_reviewer = None
 
+        # 项目缓存
+        self.project_cache = ProjectCache()
+
         # AI审查线程
         self.ai_review_thread: Optional[QThread] = None
         self.ai_review_worker: Optional[AIReviewWorker] = None
@@ -289,6 +294,10 @@ class MainWindow(QMainWindow):
         select_project_action.setShortcut("Ctrl+Shift+P")
         select_project_action.triggered.connect(self._on_select_project)
         file_menu.addAction(select_project_action)
+
+        # 打开最近项目（子菜单）
+        self.recent_projects_menu = file_menu.addMenu("打开最近项目(&R)")
+        self._update_recent_projects_menu()
 
         file_menu.addSeparator()
 
@@ -431,6 +440,61 @@ class MainWindow(QMainWindow):
             )
             self._on_config()
 
+    def showEvent(self, event):
+        """窗口显示事件 - 自动连接GitLab"""
+        super().showEvent(event)
+        # 只在第一次显示时自动连接
+        if not self.gitlab_client and settings.gitlab.url and settings.gitlab.token:
+            QTimer.singleShot(100, self._auto_connect_gitlab)
+
+    def _auto_connect_gitlab(self):
+        """自动连接GitLab"""
+        if self.gitlab_client:
+            return  # 已经连接
+
+        try:
+            self.status_bar.showMessage("正在自动连接GitLab...")
+
+            # 创建GitLab客户端
+            self.gitlab_client = GitLabClient(
+                url=settings.gitlab.url,
+                token=settings.gitlab.token,
+                db_manager=self.db_manager,
+            )
+
+            self.status_bar.showMessage("已连接到GitLab")
+            self.connect_action.setText("已连接")
+            self.connect_action.setEnabled(False)
+
+            # 更新最近项目菜单
+            self._update_recent_projects_menu()
+
+            # 尝试加载最近的项目
+            last_project = self.project_cache.get_last_project()
+            if last_project:
+                project_id = last_project.get("project_id")
+                project_name = last_project.get("project_name", "")
+
+                if project_id:
+                    self.current_project_id = project_id
+                    display_name = f"{project_name} ({project_id})" if project_name else project_id
+                    self.project_label.setText(f"项目: {display_name}")
+                    self._load_merge_requests()
+                    self.status_bar.showMessage(f"已自动加载最近项目: {display_name}")
+            elif settings.gitlab.default_project_id:
+                # 如果没有最近项目，使用默认项目
+                self.current_project_id = settings.gitlab.default_project_id
+                self.project_label.setText(f"项目: {self.current_project_id}")
+                self._load_merge_requests()
+
+            # 启用自动刷新
+            if settings.app.auto_refresh.enabled:
+                self.auto_refresh_timer.start(settings.app.auto_refresh.interval * 1000)
+
+        except Exception as e:
+            logger.warning(f"自动连接GitLab失败: {e}")
+            self.status_bar.showMessage("自动连接失败，请手动连接")
+
     def _on_connect_gitlab(self):
         """连接GitLab"""
         if not settings.gitlab.url or not settings.gitlab.token:
@@ -452,8 +516,22 @@ class MainWindow(QMainWindow):
             self.connect_action.setText("已连接")
             self.connect_action.setEnabled(False)
 
-            # 如果有默认项目，自动选择
-            if settings.gitlab.default_project_id:
+            # 更新最近项目菜单
+            self._update_recent_projects_menu()
+
+            # 尝试加载最近的项目
+            last_project = self.project_cache.get_last_project()
+            if last_project:
+                project_id = last_project.get("project_id")
+                project_name = last_project.get("project_name", "")
+
+                if project_id:
+                    self.current_project_id = project_id
+                    display_name = f"{project_name} ({project_id})" if project_name else project_id
+                    self.project_label.setText(f"项目: {display_name}")
+                    self._load_merge_requests()
+            elif settings.gitlab.default_project_id:
+                # 如果没有最近项目，使用默认项目
                 self.current_project_id = settings.gitlab.default_project_id
                 self.project_label.setText(f"项目: {self.current_project_id}")
                 self._load_merge_requests()
@@ -482,7 +560,90 @@ class MainWindow(QMainWindow):
         if ok and project_id:
             self.current_project_id = project_id
             self.project_label.setText(f"项目: {project_id}")
+
+            # 保存到最近项目缓存
+            # 尝试获取项目名称
+            project_info = self.gitlab_client.get_project(project_id)
+            project_name = project_info.path_with_namespace if project_info else ""
+            self.project_cache.add_recent_project(project_id, project_name)
+
+            # 更新最近项目菜单
+            self._update_recent_projects_menu()
+
             self._load_merge_requests()
+
+    def _update_recent_projects_menu(self):
+        """更新最近项目菜单"""
+        # 清空菜单
+        self.recent_projects_menu.clear()
+
+        # 获取最近项目列表
+        recent_projects = self.project_cache.get_recent_projects()
+
+        if not recent_projects:
+            # 没有最近项目
+            no_recent_action = QAction("暂无最近项目", self)
+            no_recent_action.setEnabled(False)
+            self.recent_projects_menu.addAction(no_recent_action)
+        else:
+            # 添加每个项目到菜单
+            for project in recent_projects:
+                project_id = project.get("project_id", "")
+                project_name = project.get("project_name", "")
+
+                # 显示名称：优先使用项目名称，如果没有则使用项目ID
+                display_name = project_name if project_name else project_id
+                if project_name and project_id != project_name:
+                    # 如果名称和ID不同，显示 ID 作为补充
+                    action_text = f"{display_name} ({project_id})"
+                else:
+                    action_text = display_name
+
+                action = QAction(action_text, self)
+                # 使用 functools.partial 传递 project_id 参数
+                action.triggered.connect(partial(self._on_open_recent_project, project_id))
+                self.recent_projects_menu.addAction(action)
+
+            # 添加分隔线和清除选项
+            self.recent_projects_menu.addSeparator()
+            clear_recent_action = QAction("清除最近项目列表", self)
+            clear_recent_action.triggered.connect(self._on_clear_recent_projects)
+            self.recent_projects_menu.addAction(clear_recent_action)
+
+    def _on_open_recent_project(self, project_id: str):
+        """打开最近项目"""
+        if not self.gitlab_client:
+            QMessageBox.warning(self, "未连接", "请先连接到GitLab")
+            return
+
+        # 设置当前项目
+        self.current_project_id = project_id
+        self.project_label.setText(f"项目: {project_id}")
+
+        # 重新添加到缓存（更新访问时间）
+        project_info = self.gitlab_client.get_project(project_id)
+        project_name = project_info.path_with_namespace if project_info else ""
+        self.project_cache.add_recent_project(project_id, project_name)
+
+        # 更新菜单
+        self._update_recent_projects_menu()
+
+        # 加载MR列表
+        self._load_merge_requests()
+
+    def _on_clear_recent_projects(self):
+        """清除最近项目列表"""
+        reply = QMessageBox.question(
+            self,
+            "确认清除",
+            "确定要清除最近项目列表吗？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            self.project_cache.clear_cache()
+            self._update_recent_projects_menu()
 
     def _load_merge_requests(self):
         """加载MR列表"""
@@ -542,30 +703,44 @@ class MainWindow(QMainWindow):
         self.comment_panel.set_code_location(file_path, line_number, line_type)
         self.status_bar.showMessage(f"已选择: {file_path}:{line_number}")
 
-    def _on_publish_comment(self, file_path: str, content: str, line_number: int, line_type: str):
+    def _on_publish_comment(self, file_path: str, content: str, line_number: object, line_type: str):
         """处理发布评论到GitLab"""
         if not self.gitlab_client or not self.current_mr:
             QMessageBox.warning(self, "错误", "未连接到GitLab或未选择MR")
             return
 
         try:
-            # 确定line_type对应的GitLab参数
-            # "new" -> 新增行, "old" -> 删除行, "context" -> 上下文行
-            position_type = "new" if line_type == "addition" else "old" if line_type == "deletion" else "new"
+            # 如果没有行号或行号为0，发布为普通MR评论
+            if line_number is None or line_number == 0:
+                success = self.gitlab_client.create_merge_request_note(
+                    project_id=self.current_project_id,
+                    mr_iid=self.current_mr.iid,
+                    body=content,
+                )
 
-            success = self.gitlab_client.create_merge_request_discussion(
-                project_id=self.current_project_id,
-                mr_iid=self.current_mr.iid,
-                body=content,
-                file_path=file_path,
-                line_number=line_number,
-                line_type=position_type,
-            )
-
-            if success:
-                self.status_bar.showMessage(f"评论已发布到 {file_path}:{line_number}")
+                if success:
+                    self.status_bar.showMessage("评论已发布")
+                else:
+                    QMessageBox.warning(self, "发布失败", "评论发布失败，请检查权限")
             else:
-                QMessageBox.warning(self, "发布失败", "评论发布失败，请检查权限")
+                # 有行号，发布为行评论
+                # 确定line_type对应的GitLab参数
+                # "new" -> 新增行, "old" -> 删除行, "context" -> 上下文行
+                position_type = "new" if line_type == "addition" else "old" if line_type == "deletion" else "new"
+
+                success = self.gitlab_client.create_merge_request_discussion(
+                    project_id=self.current_project_id,
+                    mr_iid=self.current_mr.iid,
+                    body=content,
+                    file_path=file_path,
+                    line_number=int(line_number),
+                    line_type=position_type,
+                )
+
+                if success:
+                    self.status_bar.showMessage(f"评论已发布到 {file_path}:{line_number}")
+                else:
+                    QMessageBox.warning(self, "发布失败", "评论发布失败，请检查权限")
 
         except Exception as e:
             logger.error(f"发布评论失败: {e}")

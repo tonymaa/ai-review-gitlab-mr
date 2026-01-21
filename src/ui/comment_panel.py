@@ -331,7 +331,7 @@ class CommentPanel(QWidget):
     """评论面板 - 允许用户添加和管理评论"""
 
     # 信号：发布评论到GitLab
-    publish_comment_requested = pyqtSignal(str, str, int, str)  # (file_path, content, line, line_type)
+    publish_comment_requested = pyqtSignal(str, str, object, str)  # (file_path, content, line, line_type) - line用object以支持None
     # 信号：请求AI审查
     ai_review_requested = pyqtSignal()  # 无参数，审查当前MR的diff
     # 信号：跳转到指定评论位置
@@ -467,10 +467,6 @@ class CommentPanel(QWidget):
 
     def _on_comment_submitted(self, content: str):
         """处理评论提交"""
-        if not self.current_file_path or self.current_line_number is None:
-            QMessageBox.warning(self, "提示", "请先点击代码行选择评论位置")
-            return
-
         # 检查是否是编辑模式
         if self._editing_index is not None:
             # 编辑现有评论
@@ -480,12 +476,12 @@ class CommentPanel(QWidget):
             # 重置编辑模式
             self._editing_index = None
         else:
-            # 创建新评论
+            # 创建新评论（允许没有行号的普通评论）
             comment = ReviewComment(
                 id=None,
                 content=content,
-                line_number=self.current_line_number,
-                file_path=self.current_file_path,
+                line_number=self.current_line_number,  # 可以为 None
+                file_path=self.current_file_path or "",  # 可以为空字符串
                 comment_type="user_comment",
             )
 
@@ -535,7 +531,15 @@ class CommentPanel(QWidget):
 
                 # 更新编辑器标题为编辑模式
                 self.comment_editor.set_title("编辑评论")
-                self.comment_editor.location_label.setText(f"编辑评论 - {comment.file_path}:{comment.line_number}")
+
+                # 根据是否有行号显示不同的位置信息
+                if comment.file_path and comment.line_number:
+                    self.comment_editor.location_label.setText(f"编辑评论 - {comment.file_path}:{comment.line_number}")
+                elif comment.file_path:
+                    self.comment_editor.location_label.setText(f"编辑评论 - {comment.file_path}")
+                else:
+                    self.comment_editor.location_label.setText("编辑评论 - 普通评论")
+
                 self.comment_editor.comment_text.setPlainText(comment.content)
 
                 # 聚焦到编辑器
@@ -564,7 +568,15 @@ class CommentPanel(QWidget):
 
         # 更新编辑器标题为编辑模式
         self.comment_editor.set_title("编辑评论")
-        self.comment_editor.location_label.setText(f"编辑评论 - {comment.file_path}:{comment.line_number}")
+
+        # 根据是否有行号显示不同的位置信息
+        if comment.file_path and comment.line_number:
+            self.comment_editor.location_label.setText(f"编辑评论 - {comment.file_path}:{comment.line_number}")
+        elif comment.file_path:
+            self.comment_editor.location_label.setText(f"编辑评论 - {comment.file_path}")
+        else:
+            self.comment_editor.location_label.setText("编辑评论 - 普通评论")
+
         self.comment_editor.comment_text.setPlainText(comment.content)
 
         # 聚焦到编辑器
