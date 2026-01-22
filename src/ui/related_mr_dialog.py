@@ -91,13 +91,6 @@ class RelatedMRDialog(QDialog):
         self.search_input.textChanged.connect(self._on_search_text_changed)
         layout.addWidget(self.search_input)
 
-        # 用户筛选
-        layout.addWidget(QLabel("我的角色:"))
-        self.role_combo = QComboBox()
-        self.role_combo.addItems(["全部", "Assignee", "Reviewer"])
-        self.role_combo.currentTextChanged.connect(self._on_filter_changed)
-        layout.addWidget(self.role_combo)
-
         return filter_bar
 
     def _create_mr_tree(self) -> QTreeWidget:
@@ -209,13 +202,9 @@ class RelatedMRDialog(QDialog):
         """刷新显示（本地筛选）"""
         # 获取筛选条件
         search_text = self.search_input.text().lower()
-        role_filter = self.role_combo.currentText()
 
         # 清空列表
         self.mr_tree.clear()
-
-        # 获取当前用户ID（用于角色筛选）
-        current_user_id = getattr(self, "_current_user_id", None)
 
         # 筛选并添加MR
         filtered_count = 0
@@ -226,16 +215,6 @@ class RelatedMRDialog(QDialog):
                 author_match = search_text in mr_info.author.username.lower() if mr_info.author else False
                 project_match = search_text in project_info.name.lower() if project_info else False
                 if not (title_match or author_match or project_match):
-                    continue
-
-            # 应用角色筛选（如果设置了当前用户ID）
-            if current_user_id and role_filter != "全部":
-                is_assignee = any(a.id == current_user_id for a in mr_info.assignees)
-                is_reviewer = any(r.id == current_user_id for r in mr_info.reviewers)
-
-                if role_filter == "Assignee" and not is_assignee:
-                    continue
-                if role_filter == "Reviewer" and not is_reviewer:
                     continue
 
             filtered_count += 1
@@ -284,9 +263,6 @@ class RelatedMRDialog(QDialog):
         """处理搜索文本变化"""
         self._refresh_display()
 
-    def _on_filter_changed(self):
-        """处理筛选条件变化"""
-        self._refresh_display()
 
     def set_current_user_id(self, user_id: int):
         """设置当前用户ID（用于角色筛选）"""
