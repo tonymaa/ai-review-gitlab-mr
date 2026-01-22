@@ -527,6 +527,8 @@ class DiffViewerPanel(QWidget):
     file_selected = pyqtSignal(int)  # file_index
     # 信号：代码行被点击
     line_clicked = pyqtSignal(int, str, str)  # (line_number, line_type, file_path)
+    # 信号：AI审查当前文件请求
+    ai_review_current_file_requested = pyqtSignal(object)  # diff_file (DiffFile对象)
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -554,6 +556,30 @@ class DiffViewerPanel(QWidget):
         self.file_combo.setMinimumWidth(400)
         self.file_combo.currentIndexChanged.connect(self._on_file_changed)
         file_selector_layout.addWidget(self.file_combo)
+
+        # AI评论当前文件按钮
+        self.ai_review_file_btn = QPushButton("AI评论当前文件")
+        self.ai_review_file_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #7c4dff;
+                color: white;
+                border: none;
+                padding: 6px 12px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #6200ea;
+            }
+            QPushButton:pressed {
+                background-color: #5200cc;
+            }
+            QPushButton:disabled {
+                background-color: #b0a0ff;
+            }
+        """)
+        self.ai_review_file_btn.clicked.connect(self._on_ai_review_current_file)
+        file_selector_layout.addWidget(self.ai_review_file_btn)
 
         file_selector_layout.addStretch()
         layout.addLayout(file_selector_layout)
@@ -653,6 +679,15 @@ class DiffViewerPanel(QWidget):
         if self.current_file_index >= 0 and self.current_file_index < len(self.diff_files):
             file_path = self.diff_files[self.current_file_index].get_display_path()
             self.line_clicked.emit(line_number, line_type, file_path)
+
+    def _on_ai_review_current_file(self):
+        """处理AI评论当前文件按钮点击"""
+        current_file = self.get_current_diff_file()
+        if current_file:
+            self.ai_review_current_file_requested.emit(current_file)
+        else:
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "提示", "请先选择一个文件")
 
     def get_current_diff_file(self) -> Optional[DiffFile]:
         """获取当前显示的diff文件"""

@@ -185,88 +185,102 @@ class OpenAIReviewer(AIReviewer):
         """
         import asyncio
 
-        # 构建文件变更摘要
-        file_changes = self._build_file_changes_summary(diff_files)
+        async def _review_all_files():
+            """异步审查所有文件"""
+            # 收集所有文件的审查结果
+            all_file_reviews: Dict[str, List[Dict[str, Any]]] = {}
+            all_issues: List[str] = []
+            all_warnings: List[str] = []
+            all_suggestions: List[str] = []
 
-        # 收集所有文件的审查结果
-        all_file_reviews: Dict[str, List[Dict[str, Any]]] = {}
-        all_issues: List[str] = []
-        all_warnings: List[str] = []
-        all_suggestions: List[str] = []
+            # 逐个审查每个文件
+            for diff_file in diff_files:
+                try:
+                    # 构建单文件审查提示词
+                    change_type = "New" if diff_file.new_file else "Modified" if not diff_file.deleted_file else "Deleted"
+                    print(diff_file.diff)
+                    prompt = self._build_detailed_file_review_prompt(
+                        file_path=diff_file.get_display_path(),
+                        change_type=change_type,
+                        diff_content=diff_file.diff,
+                        review_rules=review_rules,
+                    )
 
-        # 逐个审查每个文件
-        for diff_file in diff_files:
+                    messages = [
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user", "content": prompt},
+                    ]
+
+                    # 调用API
+                    response = await self._call_api(messages, response_format="json")
+
+                    # 解析结果
+                    file_reviews = self._parse_detailed_file_review(response, diff_file.get_display_path())
+
+                    if file_reviews:
+                        all_file_reviews[diff_file.get_display_path()] = file_reviews
+
+                        # 分类问题
+                        for review in file_reviews:
+                            severity = review.get("severity", "suggestion")
+                            description = review.get("description", "")
+                            line_number = review.get("line_number")
+
+                            # 构建带位置信息的描述
+                            location_desc = f"{diff_file.get_display_path()}"
+                            if line_number:
+                                location_desc += f":{line_number}"
+                            full_desc = f"{location_desc} - {description}"
+
+                            if severity == "critical":
+                                all_issues.append(full_desc)
+                            elif severity == "warning":
+                                all_warnings.append(full_desc)
+                            else:
+                                all_suggestions.append(full_desc)
+
+                except Exception as e:
+                    logger.error(f"审查文件 {diff_file.get_display_path()} 失败: {e}")
+                    # 继续审查下一个文件
+                    continue
+
+            # 构建整体摘要
+            summary = self._build_overall_summary(
+                mr=mr,
+                diff_files=diff_files,
+                total_issues=len(all_issues),
+                total_warnings=len(all_warnings),
+                total_suggestions=len(all_suggestions),
+            )
+
+            # 创建结果
+            result = AIReviewResult(
+                provider="openai",
+                model=self.model,
+                summary=summary,
+                overall_score=self._calculate_score(len(all_issues), len(all_warnings)),
+                issues_count=len(all_issues),
+                suggestions_count=len(all_warnings) + len(all_suggestions),
+                file_reviews=all_file_reviews,
+                critical_issues=all_issues,
+                warnings=all_warnings,
+                suggestions=all_suggestions,
+            )
+
+            return result
+
+        # 使用新的事件循环运行异步函数，避免事件循环关闭问题
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            result = loop.run_until_complete(_review_all_files())
+        finally:
+            # 先关闭客户端，再关闭事件循环
             try:
-                # 构建单文件审查提示词
-                change_type = "New" if diff_file.new_file else "Modified" if not diff_file.deleted_file else "Deleted"
-                print(diff_file.diff)
-                prompt = self._build_detailed_file_review_prompt(
-                    file_path=diff_file.get_display_path(),
-                    change_type=change_type,
-                    diff_content=diff_file.diff,
-                    review_rules=review_rules,
-                )
-
-                messages = [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt},
-                ]
-
-                # 调用API
-                response = asyncio.run(self._call_api(messages, response_format="json"))
-                
-                # 解析结果
-                file_reviews = self._parse_detailed_file_review(response, diff_file.get_display_path())
-
-                if file_reviews:
-                    all_file_reviews[diff_file.get_display_path()] = file_reviews
-
-                    # 分类问题
-                    for review in file_reviews:
-                        severity = review.get("severity", "suggestion")
-                        description = review.get("description", "")
-                        line_number = review.get("line_number")
-
-                        # 构建带位置信息的描述
-                        location_desc = f"{diff_file.get_display_path()}"
-                        if line_number:
-                            location_desc += f":{line_number}"
-                        full_desc = f"{location_desc} - {description}"
-
-                        if severity == "critical":
-                            all_issues.append(full_desc)
-                        elif severity == "warning":
-                            all_warnings.append(full_desc)
-                        else:
-                            all_suggestions.append(full_desc)
-
-            except Exception as e:
-                logger.error(f"审查文件 {diff_file.get_display_path()} 失败: {e}")
-                # 继续审查下一个文件
-                continue
-
-        # 构建整体摘要
-        summary = self._build_overall_summary(
-            mr=mr,
-            diff_files=diff_files,
-            total_issues=len(all_issues),
-            total_warnings=len(all_warnings),
-            total_suggestions=len(all_suggestions),
-        )
-
-        # 创建结果
-        result = AIReviewResult(
-            provider="openai",
-            model=self.model,
-            summary=summary,
-            overall_score=self._calculate_score(len(all_issues), len(all_warnings)),
-            issues_count=len(all_issues),
-            suggestions_count=len(all_warnings) + len(all_suggestions),
-            file_reviews=all_file_reviews,
-            critical_issues=all_issues,
-            warnings=all_warnings,
-            suggestions=all_suggestions,
-        )
+                loop.run_until_complete(self.client.close())
+            except Exception:
+                pass
+            loop.close()
 
         return result
 
@@ -280,127 +294,119 @@ class OpenAIReviewer(AIReviewer):
         """构建详细的文件审查提示词"""
         rules_text = "\\n".join(f"- {rule}" for rule in review_rules)
 
-        # 使用字符串拼接避免 f-string 中的特殊字符问题
-        prompt_parts = [
-            "Please review the following code changes:",
-            "",
-            "## File Path",
-            file_path,
-            "",
-            "## Change Type",
-            change_type,
-            "",
-            "## Review Rules",
-            rules_text,
-            "",
-            "## Line Number Rules (CRITICAL - YOU MUST GET THIS RIGHT)",
-            "",
-            "The diff hunk header format: @@ -<old_start>,<old_count> +<new_start>,<new_count> @@",
-            "",
-            "Line prefixes in diff:",
-            "- Lines starting with ' ' (space): context/unchanged lines",
-            "- Lines starting with '-': deleted lines (exist in OLD file)",
-            "- Lines starting with '+': added lines (exist in NEW file)",
-            "",
-            "### HOW TO CALCULATE LINE NUMBERS:",
-            "",
-            "STEP 1: Parse the hunk header",
-            "Example: @@ -83,16 +83,6 @@",
-            "- OLD file starts at line 83, has 16 lines in this hunk",
-            "- NEW file starts at line 83, has 6 lines in this hunk",
-            "",
-            "STEP 2: Count lines from the start number",
-            "- For DELETED lines (-): count from the OLD start number",
-            "- For ADDED lines (+): count from the NEW start number",
-            "- Context lines DON'T affect the count",
-            "",
-            "STEP 3: Report the line number where the specific issue occurs",
-            "",
-            "### DETAILED EXAMPLES:",
-            "",
-            "Example 1 - Single line change:",
-            '--- diff',
-            "@@ -554,7 +554,7 @@",
-            " ReactDOM.render(",
-            "   <ReduxProvider>",
-            "     <HashRouter>",
-            "-      <ConfigProvider locale=enUS>",
-            "+      <ConfigProvider locale=enUS errorBoundary={{}} key='111111112'>",
-            "         <PreviewPage />",
-            '---',
-            "Analysis:",
-            "- OLD file line 557: <ConfigProvider locale=enUS> (DELETED)",
-            "- NEW file line 557: <ConfigProvider with errorBoundary> (ADDED)",
-            "- Report issues with the new prop as line 557",
-            "",
-            "Example 2 - Multi-line deletion:",
-            '--- diff',
-            "@@ -83,16 +83,6 @@",
-            "     config",
-            "-      .plugin('icon-preview')",
-            "-      .use(HtmlWebpackPlugin, [",
-            "-        {{",
-            "-          inject: false,",
-            "-          templateParameters: {{}},",
-            "-          template: require.resolve('./public/icon-preview.html'),",
-            "-          filename: 'icon-preview.html',",
-            "-        }},",
-            "-      ]);",
-            '---',
-            "Analysis:",
-            "- Line 83: config (context)",
-            "- Line 84: .plugin('icon-preview') (DELETED) - Report plugin issues as 84",
-            "- Line 85: .use(HtmlWebpackPlugin, [) (DELETED) - Report use issues as 85",
-            "- Line 86: {{ (DELETED) - Report this line as 86",
-            "",
-            "Example 3 - Multiple additions:",
-            '--- diff',
-            "@@ -10,2 +10,4 @@",
-            " function foo() {{",
-            "-  return 1;",
-            "+  const x = 1;",
-            "+  return x;",
-            " }}",
-            '---',
-            "Analysis:",
-            "- Line 11: return 1; (DELETED from OLD)",
-            "- Line 11: const x = 1; (ADDED to NEW) - Report issues as 11",
-            "- Line 12: return x; (ADDED to NEW) - Report issues as 12",
-            "",
-            "### YOUR TASK:",
-            "For EACH issue you find:",
-            "1. Identify the SPECIFIC line that has the problem",
-            "2. Determine if it's a + line (use NEW file number) or - line (use OLD file number)",
-            "3. Count from the hunk header to get the exact line number",
-            "4. NEVER use null unless you absolutely cannot determine the line",
-            "",
-            "## Diff Content to Review:",
-            '--- diff',
-            diff_content,
-            '---',
-            "",
-            "## Output Format (JSON only):",
-            "{",
-            '  "reviews": [',
-            '    {',
-            '      "line_number": <exact line number>,',
-            '      "severity": <"critical" | "warning" | "suggestion">,',
-            '      "description": "<describe the issue and mention which line>"',
-            '    }',
-            '  ]',
-            '}',
-            "",
-            "Review focus:",
-            "1. Bugs and logic errors",
-            "2. Security vulnerabilities",
-            "3. Performance issues",
-            "4. Code quality and maintainability",
-            "5. Best practices violations",
-            "",
-            "REMEMBER: Accurate line numbers are CRITICAL!",
-        ]
+        # 预处理diff内容，添加行号标注
+        annotated_diff = self._annotate_diff_with_line_numbers(diff_content)
 
-        return "\\n".join(prompt_parts)
+        prompt = f"""Please review the following code changes:
+
+## File Path
+{file_path}
+
+## Change Type
+{change_type}
+
+## Review Rules
+{rules_text}
+
+## IMPORTANT: How to Read Line Numbers
+
+The diff below has line numbers PRE-CALCULATED for you in brackets [OLD:N | NEW:N]:
+- Lines starting with + (additions): Use the number after NEW:
+- Lines starting with - (deletions): Use the number after OLD:
+- Lines starting with ' ' (context): Either number works
+
+Example:
+[OLD:10 | NEW:10] function foo() {{
+[OLD:11 | NEW:- ]-  return 1;
+[OLD:-  | NEW:11]+  const x = 1;
+[OLD:-  | NEW:12]+  return x;
+[OLD:12 | NEW:13] }}
+
+For the line "+  const x = 1;", report line_number as 11 (from NEW:)
+For the line "-  return 1;", report line_number as 11 (from OLD:)
+
+## Diff Content to Review
+--- diff
+{annotated_diff}
+---
+
+## Output Format (JSON only)
+{{
+  "reviews": [
+    {{
+      "line_number": <copy EXACTLY from brackets above>,
+      "severity": <"critical" | "warning" | "suggestion">,
+      "description": "<describe the issue>"
+    }}
+  ]
+}}
+
+Review focus:
+1. Bugs and logic errors
+2. Security vulnerabilities
+3. Performance issues
+4. Code quality and maintainability
+5. Best practices violations
+
+CRITICAL: Always use the line number shown in [OLD:N | NEW:N] brackets!"""
+        return prompt
+
+    def _annotate_diff_with_line_numbers(self, diff_content: str) -> str:
+        """
+        为diff内容添加行号标注
+        格式: [OLD:N | NEW:N] prefix content
+        """
+        import re
+
+        lines = diff_content.split('\n')
+        annotated_lines = []
+
+        # 当前行号追踪
+        old_line = None
+        new_line = None
+
+        for line in lines:
+            # 检查是否是hunk头部
+            hunk_match = re.match(r'@@\s+-(\d+),?\d*\s+\+(\d+),?\d*\s+@@', line)
+            if hunk_match:
+                # 新的hunk开始，重置行号
+                # hunk的起始行号是1-based，但还没开始计数
+                old_start = int(hunk_match.group(1))
+                new_start = int(hunk_match.group(2))
+                # hunk头部行不计数，保留原样
+                annotated_lines.append(line)
+                # 设置下一行的起始行号（减1，因为会在处理时+1）
+                old_line = old_start - 1
+                new_line = new_start - 1
+                continue
+
+            # 根据行前缀处理
+            if line.startswith('+') and not line.startswith('+++'):
+                # 新增行 - new_line增加
+                new_line += 1
+                old_display = '-'
+                new_display = new_line
+            elif line.startswith('-') and not line.startswith('---'):
+                # 删除行 - old_line增加
+                old_line += 1
+                old_display = old_line
+                new_display = '-'
+            elif line.startswith(' '):
+                # 上下文行 - 都增加
+                old_line += 1
+                new_line += 1
+                old_display = old_line
+                new_display = new_line
+            else:
+                # 其他行（文件头、hunk头等）- 不加行号标注
+                annotated_lines.append(line)
+                continue
+
+            # 格式化行号标注
+            annotation = f"[OLD:{old_display} | NEW:{new_display}]"
+            annotated_lines.append(f"{annotation} {line}")
+
+        return '\n'.join(annotated_lines)
 
     def _parse_detailed_file_review(self, response: str, file_path: str) -> List[Dict[str, Any]]:
         """解析详细的文件审查响应"""
@@ -478,11 +484,20 @@ class OpenAIReviewer(AIReviewer):
         ]
 
         try:
-            response = asyncio.run(self._call_api(messages, response_format="json"))
-            return self._parse_file_review(response, diff_file)
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            response = loop.run_until_complete(self._call_api(messages, response_format="json"))
+            result = self._parse_file_review(response, diff_file)
+            return result
         except Exception as e:
             logger.error(f"文件审查失败: {e}")
             return FileReview(file_path=diff_file.get_display_path())
+        finally:
+            try:
+                loop.run_until_complete(self.client.close())
+            except Exception:
+                pass
+            loop.close()
 
     def _build_file_changes_summary(self, diff_files: List[DiffFile]) -> str:
         """构建文件变更摘要"""

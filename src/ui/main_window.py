@@ -552,6 +552,7 @@ class MainWindow(QMainWindow):
         self.diff_viewer = DiffViewerPanel()
         self.diff_viewer.setMinimumWidth(400)
         self.diff_viewer.line_clicked.connect(self._on_diff_line_clicked)
+        self.diff_viewer.ai_review_current_file_requested.connect(self._on_ai_review_current_file)
         splitter.addWidget(self.diff_viewer)
 
         # 右侧：评论面板
@@ -1051,11 +1052,95 @@ class MainWindow(QMainWindow):
         """AI审查完成回调"""
         self.comment_panel.on_ai_review_complete(ai_comments)
         self.status_bar.showMessage(f"AI审查完成，生成 {len(ai_comments)} 条评论")
+        # 恢复diff viewer上的按钮状态
+        self.diff_viewer.ai_review_file_btn.setEnabled(True)
+        self.diff_viewer.ai_review_file_btn.setText("AI评论当前文件")
 
     def _on_ai_review_failed(self, error_msg: str):
         """AI审查失败回调"""
         self.comment_panel.on_ai_review_error(error_msg)
         self.status_bar.showMessage("AI审查失败")
+        # 恢复diff viewer上的按钮状态
+        self.diff_viewer.ai_review_file_btn.setEnabled(True)
+        self.diff_viewer.ai_review_file_btn.setText("AI评论当前文件")
+
+    def _on_ai_review_current_file(self, diff_file):
+        """处理AI审查当前文件请求"""
+        if not self.current_mr:
+            QMessageBox.warning(self, "提示", "请先选择一个Merge Request")
+            return
+
+        if not diff_file:
+            QMessageBox.warning(self, "提示", "没有可审查的文件")
+            return
+
+        # 检查AI配置
+        provider = settings.ai.provider
+        if provider == "openai" and not settings.ai.openai.api_key:
+            QMessageBox.warning(
+                self,
+                "配置错误",
+                "请先配置OpenAI API Key\n\n可以在配置中设置或使用.env文件配置OPENAI_API_KEY"
+            )
+            return
+
+        try:
+            # 停止之前的审查线程
+            if self.ai_review_thread and self.ai_review_thread.isRunning():
+                self.ai_review_thread.quit()
+                self.ai_review_thread.wait()
+
+            # 准备审查配置
+            review_config = {
+                "provider": provider,
+                "temperature": settings.ai.openai.temperature if provider == "openai" else 0.3,
+                "max_tokens": settings.ai.openai.max_tokens if provider == "openai" else 2000,
+                "review_rules": settings.ai.review_rules,
+            }
+
+            if provider == "openai":
+                review_config.update({
+                    "api_key": settings.ai.openai.api_key,
+                    "model": settings.ai.openai.model,
+                    "base_url": settings.ai.openai.base_url,
+                })
+            elif provider == "ollama":
+                review_config.update({
+                    "base_url": settings.ai.ollama.base_url,
+                    "model": settings.ai.ollama.model,
+                })
+
+            # 创建工作线程
+            self.ai_review_thread = QThread()
+            self.ai_review_worker = AIReviewWorker(
+                self.current_mr,
+                [diff_file],  # 只审查当前选中的文件
+                review_config
+            )
+            self.ai_review_worker.moveToThread(self.ai_review_thread)
+
+            # 连接信号
+            self.ai_review_thread.started.connect(self.ai_review_worker.run_review)
+            self.ai_review_worker.review_completed.connect(self._on_ai_review_completed)
+            self.ai_review_worker.review_failed.connect(self._on_ai_review_failed)
+            self.ai_review_worker.review_completed.connect(self.ai_review_thread.quit)
+            self.ai_review_worker.review_failed.connect(self.ai_review_thread.quit)
+
+            # 更新状态
+            file_path = diff_file.get_display_path()
+            self.status_bar.showMessage(f"正在进行AI审查: {file_path}...")
+            self.diff_viewer.ai_review_file_btn.setEnabled(False)
+            self.diff_viewer.ai_review_file_btn.setText("AI审查中...")
+
+            # 启动线程
+            self.ai_review_thread.start()
+
+        except Exception as e:
+            logger.error(f"启动AI审查失败: {e}", exc_info=True)
+            self.comment_panel.on_ai_review_error(str(e))
+            self.status_bar.showMessage("AI审查失败")
+            self.diff_viewer.ai_review_file_btn.setEnabled(True)
+            self.diff_viewer.ai_review_file_btn.setText("AI评论当前文件")
 
     def _on_jump_to_comment(self, file_path: str, line_number: int):
         """处理跳转到评论位置"""
