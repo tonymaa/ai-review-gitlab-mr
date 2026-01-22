@@ -37,6 +37,7 @@ from ..ai.reviewer import create_reviewer, ReviewIssue
 from .mr_list_widget import MRListWidget
 from .diff_viewer import DiffViewerPanel
 from .comment_panel import CommentPanel
+from .related_mr_dialog import RelatedMRDialog
 
 logger = logging.getLogger(__name__)
 
@@ -512,8 +513,7 @@ class MainWindow(QMainWindow):
 
         # 与我相关的MR
         self.related_mr_action = QAction("与我相关的MR", self)
-        self.related_mr_action.setCheckable(True)
-        self.related_mr_action.triggered.connect(self._on_toggle_related_mr)
+        self.related_mr_action.triggered.connect(self._on_show_related_mr)
         toolbar.addAction(self.related_mr_action)
 
         toolbar.addSeparator()
@@ -919,13 +919,40 @@ class MainWindow(QMainWindow):
         if self.current_project_id:
             self._load_merge_requests()
 
-    def _on_toggle_related_mr(self):
-        """切换“与我相关的MR”筛选"""
-        if self.current_project_id:
-            # 切换后重新加载MR列表
-            mode = "与我相关" if self.related_mr_action.isChecked() else "全部"
-            self.status_bar.showMessage(f"正在加载{mode}的MR...")
-            self._load_merge_requests()
+    def _on_show_related_mr(self):
+        """显示所有项目中与我相关的MR"""
+        if not self.gitlab_client:
+            QMessageBox.warning(self, "错误", "请先配置GitLab连接")
+            return
+
+        # 创建对话框
+        dialog = RelatedMRDialog(self)
+        dialog.set_loading(True, "正在加载MR...")
+
+        # 设置数据加载回调函数
+        def load_mr_data():
+            return self.gitlab_client.list_all_merge_requests_related_to_me()
+
+        dialog.set_load_data_callback(load_mr_data)
+
+        # 设置当前用户ID用于角色筛选
+        current_user = self.gitlab_client.get_current_user()
+        if current_user:
+            dialog.set_current_user_id(current_user.get("id"))
+
+        # 加载初始数据
+        try:
+            mr_list = load_mr_data()
+            dialog.load_merge_requests(mr_list)
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"加载MR失败: {e}")
+            dialog.reject()
+            return
+        finally:
+            dialog.set_loading(False)
+
+        # 显示对话框
+        dialog.exec()
 
     def _on_auto_refresh(self):
         """自动刷新"""
