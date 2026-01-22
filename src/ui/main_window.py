@@ -42,6 +42,29 @@ from .related_mr_dialog import RelatedMRDialog
 logger = logging.getLogger(__name__)
 
 
+class AsyncWorker(QObject):
+    """通用异步工作线程"""
+
+    # 信号：完成、失败
+    finished = pyqtSignal(object)  # result
+    failed = pyqtSignal(str)  # error_message
+
+    def __init__(self, func, *args, **kwargs):
+        super().__init__()
+        self.func = func
+        self.args = args
+        self.kwargs = kwargs
+
+    def run(self):
+        """执行任务（在子线程中运行）"""
+        try:
+            result = self.func(*self.args, **self.kwargs)
+            self.finished.emit(result)
+        except Exception as e:
+            logger.error(f"异步任务失败: {e}", exc_info=True)
+            self.failed.emit(str(e))
+
+
 class AIReviewWorker(QObject):
     """AI审查工作线程"""
 
@@ -226,8 +249,11 @@ class ProjectSelectDialog(QDialog):
         self.gitlab_client = gitlab_client
         self.selected_project = None
         self.projects = []
+        self.async_thread: Optional[QThread] = None
+        self.async_worker: Optional[AsyncWorker] = None
         self._setup_ui()
-        self._load_projects()
+        # 延迟加载项目，避免在构造函数中执行异步操作
+        QTimer.singleShot(100, self._load_projects_async)
 
     def _setup_ui(self):
         """设置UI"""
@@ -280,41 +306,66 @@ class ProjectSelectDialog(QDialog):
         self.setMinimumWidth(500)
         self.setMinimumHeight(300)
 
-    def _load_projects(self):
-        """加载项目列表"""
-        try:
-            self.project_combo.addItem("正在加载项目...")
-            self.project_combo.setEnabled(False)
+    def _load_projects_async(self):
+        """异步加载项目列表"""
+        self.project_combo.addItem("正在加载项目...")
+        self.project_combo.setEnabled(False)
 
-            # 获取所有项目（用户成员的项目）
-            self.projects = self.gitlab_client.list_projects(
+        # 停止之前的异步任务
+        if self.async_thread and self.async_thread.isRunning():
+            self.async_thread.quit()
+            self.async_thread.wait()
+
+        # 创建加载函数
+        def load_projects():
+            return self.gitlab_client.list_projects(
                 membership=True,
                 per_page=100,
             )
 
-            # 清空并重新填充下拉框
-            self.project_combo.clear()
-            self.project_combo.setEnabled(True)
+        # 创建工作线程
+        self.async_thread = QThread()
+        self.async_worker = AsyncWorker(load_projects)
+        self.async_worker.moveToThread(self.async_thread)
 
-            if not self.projects:
-                self.project_combo.addItem("暂无可用项目")
-                self.project_combo.setEnabled(False)
-                self.details_label.setText("未找到您可以访问的项目。")
-            else:
-                self.project_combo.addItem("-- 请选择项目 --")
-                for project in self.projects:
-                    # 显示格式: 项目名称 (路径)
-                    display_text = f"{project.name} ({project.path_with_namespace})"
-                    self.project_combo.addItem(display_text, project)
+        # 连接信号
+        self.async_thread.started.connect(self.async_worker.run)
+        self.async_worker.finished.connect(self._on_projects_loaded)
+        self.async_worker.failed.connect(self._on_projects_load_failed)
+        self.async_worker.finished.connect(self.async_thread.quit)
+        self.async_worker.failed.connect(self.async_thread.quit)
 
-                self.project_combo.setCurrentIndex(0)
-                self.details_label.setText(f"共找到 {len(self.projects)} 个项目")
+        # 启动线程
+        self.async_thread.start()
 
-        except Exception as e:
-            self.project_combo.clear()
-            self.project_combo.addItem("加载失败")
+    def _on_projects_loaded(self, projects: list):
+        """项目加载成功回调"""
+        self.projects = projects
+
+        # 清空并重新填充下拉框
+        self.project_combo.clear()
+        self.project_combo.setEnabled(True)
+
+        if not self.projects:
+            self.project_combo.addItem("暂无可用项目")
             self.project_combo.setEnabled(False)
-            self.details_label.setText(f"加载项目列表失败: {e}")
+            self.details_label.setText("未找到您可以访问的项目。")
+        else:
+            self.project_combo.addItem("-- 请选择项目 --")
+            for project in self.projects:
+                # 显示格式: 项目名称 (路径)
+                display_text = f"{project.name} ({project.path_with_namespace})"
+                self.project_combo.addItem(display_text, project)
+
+            self.project_combo.setCurrentIndex(0)
+            self.details_label.setText(f"共找到 {len(self.projects)} 个项目")
+
+    def _on_projects_load_failed(self, error_msg: str):
+        """项目加载失败回调"""
+        self.project_combo.clear()
+        self.project_combo.addItem("加载失败")
+        self.project_combo.setEnabled(False)
+        self.details_label.setText(f"加载项目列表失败: {error_msg}")
 
     def _on_project_changed(self, index: int):
         """当项目选择改变时"""
@@ -389,6 +440,13 @@ class MainWindow(QMainWindow):
         # AI审查线程
         self.ai_review_thread: Optional[QThread] = None
         self.ai_review_worker: Optional[AIReviewWorker] = None
+
+        # 异步任务线程
+        self.async_thread: Optional[QThread] = None
+        self.async_worker: Optional[AsyncWorker] = None
+
+        # 用于对话框的异步线程（需要保持引用防止被回收）
+        self.dialog_async_threads: list = []
 
         # 当前状态
         self.current_project_id: Optional[str] = None
@@ -612,101 +670,133 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(100, self._auto_connect_gitlab)
 
     def _auto_connect_gitlab(self):
-        """自动连接GitLab"""
+        """自动连接GitLab（异步）"""
         if self.gitlab_client:
             return  # 已经连接
 
-        try:
-            self.status_bar.showMessage("正在自动连接GitLab...")
+        self.status_bar.showMessage("正在自动连接GitLab...")
 
-            # 创建GitLab客户端
-            self.gitlab_client = GitLabClient(
+        # 停止之前的异步任务
+        if self.async_thread and self.async_thread.isRunning():
+            self.async_thread.quit()
+            self.async_thread.wait()
+
+        # 创建连接函数
+        def connect_gitlab():
+            return GitLabClient(
                 url=settings.gitlab.url,
                 token=settings.gitlab.token,
                 db_manager=self.db_manager,
             )
 
-            self.status_bar.showMessage("已连接到GitLab")
-            self.connect_action.setText("已连接")
-            self.connect_action.setEnabled(False)
+        # 创建工作线程
+        self.async_thread = QThread()
+        self.async_worker = AsyncWorker(connect_gitlab)
+        self.async_worker.moveToThread(self.async_thread)
 
-            # 更新最近项目菜单
-            self._update_recent_projects_menu()
+        # 连接信号
+        self.async_thread.started.connect(self.async_worker.run)
+        self.async_worker.finished.connect(self._on_gitlab_connected)
+        self.async_worker.failed.connect(self._on_gitlab_connect_failed)
+        self.async_worker.finished.connect(self.async_thread.quit)
+        self.async_worker.failed.connect(self.async_thread.quit)
 
-            # 尝试加载最近的项目
-            # last_project = self.project_cache.get_last_project()
-            # if last_project:
-                # project_id = last_project.get("project_id")
-                # project_name = last_project.get("project_name", "")
+        # 启动线程
+        self.async_thread.start()
 
-                # if project_id:
-                    # self.current_project_id = project_id
-                    # display_name = f"{project_name} ({project_id})" if project_name else project_id
-                    # self.project_label.setText(f"项目: {display_name}")
-                    # self._load_merge_requests()
-                    # self.status_bar.showMessage(f"已自动加载最近项目: {display_name}")
-            # elif settings.gitlab.default_project_id:
-                # 如果没有最近项目，使用默认项目
-                # self.current_project_id = settings.gitlab.default_project_id
-                # self.project_label.setText(f"项目: {self.current_project_id}")
-                # self._load_merge_requests()
+    def _on_gitlab_connected(self, client: GitLabClient):
+        """GitLab连接成功回调"""
+        self.gitlab_client = client
 
-            # 启用自动刷新
-            if settings.app.auto_refresh.enabled:
-                self.auto_refresh_timer.start(settings.app.auto_refresh.interval * 1000)
+        self.status_bar.showMessage("已连接到GitLab")
+        self.connect_action.setText("已连接")
+        self.connect_action.setEnabled(False)
 
-        except Exception as e:
-            logger.warning(f"自动连接GitLab失败: {e}")
-            self.status_bar.showMessage("自动连接失败，请手动连接")
+        # 更新最近项目菜单
+        self._update_recent_projects_menu()
+
+        # 启用自动刷新
+        if settings.app.auto_refresh.enabled:
+            self.auto_refresh_timer.start(settings.app.auto_refresh.interval * 1000)
+
+    def _on_gitlab_connect_failed(self, error_msg: str):
+        """GitLab连接失败回调"""
+        logger.warning(f"自动连接GitLab失败: {error_msg}")
+        self.status_bar.showMessage("自动连接失败，请手动连接")
 
     def _on_connect_gitlab(self):
-        """连接GitLab"""
+        """连接GitLab（异步）"""
         if not settings.gitlab.url or not settings.gitlab.token:
             QMessageBox.warning(self, "配置错误", "请先配置GitLab URL和Token")
             self._on_config()
             return
 
-        try:
-            self.status_bar.showMessage("正在连接GitLab...")
+        self.status_bar.showMessage("正在连接GitLab...")
 
-            # 创建GitLab客户端
-            self.gitlab_client = GitLabClient(
+        # 停止之前的异步任务
+        if self.async_thread and self.async_thread.isRunning():
+            self.async_thread.quit()
+            self.async_thread.wait()
+
+        # 创建连接函数
+        def connect_gitlab():
+            return GitLabClient(
                 url=settings.gitlab.url,
                 token=settings.gitlab.token,
                 db_manager=self.db_manager,
             )
 
-            self.status_bar.showMessage("已连接到GitLab")
-            self.connect_action.setText("已连接")
-            self.connect_action.setEnabled(False)
+        # 创建工作线程
+        self.async_thread = QThread()
+        self.async_worker = AsyncWorker(connect_gitlab)
+        self.async_worker.moveToThread(self.async_thread)
 
-            # 更新最近项目菜单
-            self._update_recent_projects_menu()
+        # 连接信号
+        self.async_thread.started.connect(self.async_worker.run)
+        self.async_worker.finished.connect(self._on_gitlab_connect_manual_success)
+        self.async_worker.failed.connect(self._on_gitlab_connect_manual_failed)
+        self.async_worker.finished.connect(self.async_thread.quit)
+        self.async_worker.failed.connect(self.async_thread.quit)
 
-            # 尝试加载最近的项目
-            last_project = self.project_cache.get_last_project()
-            if last_project:
-                project_id = last_project.get("project_id")
-                project_name = last_project.get("project_name", "")
+        # 启动线程
+        self.async_thread.start()
 
-                if project_id:
-                    self.current_project_id = project_id
-                    display_name = f"{project_name} ({project_id})" if project_name else project_id
-                    self.project_label.setText(f"项目: {display_name}")
-                    self._load_merge_requests()
-            elif settings.gitlab.default_project_id:
-                # 如果没有最近项目，使用默认项目
-                self.current_project_id = settings.gitlab.default_project_id
-                self.project_label.setText(f"项目: {self.current_project_id}")
+    def _on_gitlab_connect_manual_success(self, client: GitLabClient):
+        """手动连接GitLab成功回调"""
+        self.gitlab_client = client
+
+        self.status_bar.showMessage("已连接到GitLab")
+        self.connect_action.setText("已连接")
+        self.connect_action.setEnabled(False)
+
+        # 更新最近项目菜单
+        self._update_recent_projects_menu()
+
+        # 尝试加载最近的项目
+        last_project = self.project_cache.get_last_project()
+        if last_project:
+            project_id = last_project.get("project_id")
+            project_name = last_project.get("project_name", "")
+
+            if project_id:
+                self.current_project_id = project_id
+                display_name = f"{project_name} ({project_id})" if project_name else project_id
+                self.project_label.setText(f"项目: {display_name}")
                 self._load_merge_requests()
+        elif settings.gitlab.default_project_id:
+            # 如果没有最近项目，使用默认项目
+            self.current_project_id = settings.gitlab.default_project_id
+            self.project_label.setText(f"项目: {self.current_project_id}")
+            self._load_merge_requests()
 
-            # 启用自动刷新
-            if settings.app.auto_refresh.enabled:
-                self.auto_refresh_timer.start(settings.app.auto_refresh.interval * 1000)
+        # 启用自动刷新
+        if settings.app.auto_refresh.enabled:
+            self.auto_refresh_timer.start(settings.app.auto_refresh.interval * 1000)
 
-        except Exception as e:
-            QMessageBox.critical(self, "连接失败", f"无法连接到GitLab:\n\n{e}")
-            self.status_bar.showMessage("连接失败")
+    def _on_gitlab_connect_manual_failed(self, error_msg: str):
+        """手动连接GitLab失败回调"""
+        QMessageBox.critical(self, "连接失败", f"无法连接到GitLab:\n\n{error_msg}")
+        self.status_bar.showMessage("连接失败")
 
     def _on_select_project(self):
         """选择项目"""
@@ -806,64 +896,110 @@ class MainWindow(QMainWindow):
             self._update_recent_projects_menu()
 
     def _load_merge_requests(self):
-        """加载MR列表"""
+        """加载MR列表（异步）"""
         if not self.gitlab_client or not self.current_project_id:
             return
 
-        try:
-            self.status_bar.showMessage("正在加载MR列表...")
-            self.mr_list_widget.set_loading(True)
+        self.status_bar.showMessage("正在加载MR列表...")
+        self.mr_list_widget.set_loading(True)
 
-            # 根据"与我相关的MR"按钮状态选择获取方式
+        # 停止之前的异步任务
+        if self.async_thread and self.async_thread.isRunning():
+            self.async_thread.quit()
+            self.async_thread.wait()
+
+        # 创建加载函数
+        def load_mr_list():
             if self.related_mr_action.isChecked():
                 # 只获取与当前用户相关的MR
-                mr_list = self.gitlab_client.list_merge_requests_related_to_me(
+                return self.gitlab_client.list_merge_requests_related_to_me(
                     project_id=self.current_project_id,
                     state="all",
                 )
             else:
                 # 获取所有MR
-                mr_list = self.gitlab_client.list_merge_requests(
+                return self.gitlab_client.list_merge_requests(
                     project_id=self.current_project_id,
                     state="all",
                 )
 
-            self.mr_list_widget.load_merge_requests(mr_list)
-            self.status_bar.showMessage(f"已加载 {len(mr_list)} 个MR")
+        # 创建工作线程
+        self.async_thread = QThread()
+        self.async_worker = AsyncWorker(load_mr_list)
+        self.async_worker.moveToThread(self.async_thread)
 
-        except Exception as e:
-            logger.error(f"加载MR列表失败: {e}")
-            QMessageBox.critical(self, "加载失败", f"无法加载MR列表:\n\n{e}")
-            self.status_bar.showMessage("加载失败")
-        finally:
-            self.mr_list_widget.set_loading(False)
+        # 连接信号
+        self.async_thread.started.connect(self.async_worker.run)
+        self.async_worker.finished.connect(self._on_mr_list_loaded)
+        self.async_worker.failed.connect(self._on_mr_list_load_failed)
+        self.async_worker.finished.connect(self.async_thread.quit)
+        self.async_worker.failed.connect(self.async_thread.quit)
+
+        # 启动线程
+        self.async_thread.start()
+
+    def _on_mr_list_loaded(self, mr_list: list):
+        """MR列表加载成功回调"""
+        self.mr_list_widget.load_merge_requests(mr_list)
+        self.status_bar.showMessage(f"已加载 {len(mr_list)} 个MR")
+        self.mr_list_widget.set_loading(False)
+
+    def _on_mr_list_load_failed(self, error_msg: str):
+        """MR列表加载失败回调"""
+        logger.error(f"加载MR列表失败: {error_msg}")
+        QMessageBox.critical(self, "加载失败", f"无法加载MR列表:\n\n{error_msg}")
+        self.status_bar.showMessage("加载失败")
+        self.mr_list_widget.set_loading(False)
 
     def _on_mr_selected(self, mr: MergeRequestInfo):
-        """处理MR选中"""
+        """处理MR选中（异步）"""
         self.current_mr = mr
+        self.status_bar.showMessage(f"正在加载MR !{mr.iid}的详情...")
 
-        try:
-            # 获取MR详情和Diff
-            self.status_bar.showMessage(f"正在加载MR !{mr.iid}的详情...")
+        # 停止之前的异步任务
+        if self.async_thread and self.async_thread.isRunning():
+            self.async_thread.quit()
+            self.async_thread.wait()
 
-            # 获取diff文件
-            self.current_diff_files = self.gitlab_client.get_merge_request_diffs(
+        # 创建加载函数
+        def load_mr_diffs():
+            return self.gitlab_client.get_merge_request_diffs(
                 project_id=self.current_project_id,
                 mr_iid=mr.iid,
             )
 
-            # 显示diff
-            self.diff_viewer.load_diffs(self.current_diff_files)
+        # 创建工作线程
+        self.async_thread = QThread()
+        self.async_worker = AsyncWorker(load_mr_diffs)
+        self.async_worker.moveToThread(self.async_thread)
 
-            # 清空评论面板并传递diff文件
-            self.comment_panel._on_clear()
-            self.comment_panel.set_diff_files(self.current_diff_files)
+        # 连接信号
+        self.async_thread.started.connect(self.async_worker.run)
+        self.async_worker.finished.connect(self._on_mr_diffs_loaded)
+        self.async_worker.failed.connect(self._on_mr_diffs_load_failed)
+        self.async_worker.finished.connect(self.async_thread.quit)
+        self.async_worker.failed.connect(self.async_thread.quit)
 
-            self.status_bar.showMessage(f"已加载MR !{mr.iid} - {mr.title}")
+        # 启动线程
+        self.async_thread.start()
 
-        except Exception as e:
-            logger.error(f"加载MR详情失败: {e}")
-            self.status_bar.showMessage(f"加载失败: {e}")
+    def _on_mr_diffs_loaded(self, diff_files: list):
+        """MR Diff加载成功回调"""
+        self.current_diff_files = diff_files
+
+        # 显示diff
+        self.diff_viewer.load_diffs(self.current_diff_files)
+
+        # 清空评论面板并传递diff文件
+        self.comment_panel._on_clear()
+        self.comment_panel.set_diff_files(self.current_diff_files)
+
+        self.status_bar.showMessage(f"已加载MR !{self.current_mr.iid} - {self.current_mr.title}")
+
+    def _on_mr_diffs_load_failed(self, error_msg: str):
+        """MR Diff加载失败回调"""
+        logger.error(f"加载MR详情失败: {error_msg}")
+        self.status_bar.showMessage(f"加载失败: {error_msg}")
 
     def _on_diff_line_clicked(self, line_number: int, line_type: str, file_path: str):
         """处理diff行点击"""
@@ -872,47 +1008,73 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage(f"已选择: {file_path}:{line_number}")
 
     def _on_publish_comment(self, file_path: str, content: str, line_number: object, line_type: str):
-        """处理发布评论到GitLab"""
+        """处理发布评论到GitLab（异步）"""
         if not self.gitlab_client or not self.current_mr:
             QMessageBox.warning(self, "错误", "未连接到GitLab或未选择MR")
             return
 
-        try:
+        self.status_bar.showMessage("正在发布评论...")
+
+        # 停止之前的异步任务
+        if self.async_thread and self.async_thread.isRunning():
+            self.async_thread.quit()
+            self.async_thread.wait()
+
+        # 创建发布函数
+        def publish_comment():
             # 如果没有行号或行号为0，发布为普通MR评论
             if line_number is None or line_number == 0:
-                success = self.gitlab_client.create_merge_request_note(
+                return self.gitlab_client.create_merge_request_note(
                     project_id=self.current_project_id,
                     mr_iid=self.current_mr.iid,
                     body=content,
-                )
-
-                if success:
-                    self.status_bar.showMessage("评论已发布")
-                else:
-                    QMessageBox.warning(self, "发布失败", "评论发布失败，请检查权限")
+                ), False
             else:
                 # 有行号，发布为行评论
                 # 确定line_type对应的GitLab参数
                 # "new" -> 新增行, "old" -> 删除行, "context" -> 上下文行
                 position_type = "new" if line_type == "addition" else "old" if line_type == "deletion" else "new"
 
-                success = self.gitlab_client.create_merge_request_discussion(
+                return self.gitlab_client.create_merge_request_discussion(
                     project_id=self.current_project_id,
                     mr_iid=self.current_mr.iid,
                     body=content,
                     file_path=file_path,
                     line_number=int(line_number),
                     line_type=position_type,
-                )
+                ), True
 
-                if success:
-                    self.status_bar.showMessage(f"评论已发布到 {file_path}:{line_number}")
-                else:
-                    QMessageBox.warning(self, "发布失败", "评论发布失败，请检查权限")
+        # 创建工作线程
+        self.async_thread = QThread()
+        self.async_worker = AsyncWorker(publish_comment)
+        self.async_worker.moveToThread(self.async_thread)
 
-        except Exception as e:
-            logger.error(f"发布评论失败: {e}")
-            QMessageBox.critical(self, "发布失败", f"发布评论时发生错误:\n\n{e}")
+        # 连接信号
+        self.async_thread.started.connect(self.async_worker.run)
+        self.async_worker.finished.connect(self._on_comment_published)
+        self.async_worker.failed.connect(self._on_comment_publish_failed)
+        self.async_worker.finished.connect(self.async_thread.quit)
+        self.async_worker.failed.connect(self.async_thread.quit)
+
+        # 启动线程
+        self.async_thread.start()
+
+    def _on_comment_published(self, result: tuple):
+        """评论发布成功回调"""
+        success, is_line_comment = result
+
+        if success:
+            if is_line_comment:
+                self.status_bar.showMessage("评论已发布")
+            else:
+                self.status_bar.showMessage("评论已发布")
+        else:
+            QMessageBox.warning(self, "发布失败", "评论发布失败，请检查权限")
+
+    def _on_comment_publish_failed(self, error_msg: str):
+        """评论发布失败回调"""
+        logger.error(f"发布评论失败: {error_msg}")
+        QMessageBox.critical(self, "发布失败", f"发布评论时发生错误:\n\n{error_msg}")
 
     def _on_refresh(self):
         """刷新"""
@@ -920,7 +1082,7 @@ class MainWindow(QMainWindow):
             self._load_merge_requests()
 
     def _on_show_related_mr(self):
-        """显示所有项目中与我相关的MR"""
+        """显示所有项目中与我相关的MR（异步）"""
         if not self.gitlab_client:
             QMessageBox.warning(self, "错误", "请先配置GitLab连接")
             return
@@ -929,15 +1091,16 @@ class MainWindow(QMainWindow):
         dialog = RelatedMRDialog(self)
         dialog.set_loading(True, "正在加载MR...")
 
-        # 设置数据加载回调函数
-        def load_mr_data():
-            return self.gitlab_client.list_all_merge_requests_related_to_me()
+        # 创建工作线程来加载数据
+        async_thread = QThread()
+        async_worker = AsyncWorker(self.gitlab_client.list_all_merge_requests_related_to_me)
+        async_worker.moveToThread(async_thread)
 
-        dialog.set_load_data_callback(load_mr_data)
+        # 保存线程引用防止被回收
+        self.dialog_async_threads.append((async_thread, async_worker))
 
         # 设置MR打开回调函数
         def open_mr(mr: MergeRequestInfo, project: ProjectInfo):
-
             # 清空mr列表
             if self.current_project_id != str(project.id):
                 self.mr_list_widget.load_merge_requests([])
@@ -955,10 +1118,6 @@ class MainWindow(QMainWindow):
             # 更新最近项目菜单
             self._update_recent_projects_menu()
 
-            # 加载该项目的MR列表
-            # self._load_merge_requests()
-            
-
             # 打开选中的MR
             self._on_mr_selected(mr)
 
@@ -969,19 +1128,25 @@ class MainWindow(QMainWindow):
         if current_user:
             dialog.set_current_user_id(current_user.get("id"))
 
-        # 加载初始数据
-        try:
-            mr_list = load_mr_data()
-            dialog.load_merge_requests(mr_list)
-        except Exception as e:
-            QMessageBox.critical(self, "错误", f"加载MR失败: {e}")
-            dialog.reject()
-            return
-        finally:
+        # 连接信号
+        async_thread.started.connect(async_worker.run)
+        async_worker.finished.connect(lambda mr_list: (
+            dialog.load_merge_requests(mr_list),
             dialog.set_loading(False)
+        ))
+        async_worker.failed.connect(lambda error_msg: (
+            dialog.set_loading(False),
+            QMessageBox.critical(self, "错误", f"加载MR失败: {error_msg}"),
+            dialog.reject()
+        ))
+        async_worker.finished.connect(async_thread.quit)
+        async_worker.failed.connect(async_thread.quit)
 
         # 显示对话框
-        dialog.exec()
+        dialog.show()
+
+        # 启动线程
+        async_thread.start()
 
     def _on_auto_refresh(self):
         """自动刷新"""
