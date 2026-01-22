@@ -198,14 +198,13 @@ class OpenAIReviewer(AIReviewer):
                 try:
                     # 构建单文件审查提示词
                     change_type = "New" if diff_file.new_file else "Modified" if not diff_file.deleted_file else "Deleted"
-                    print(diff_file.diff)
                     prompt = self._build_detailed_file_review_prompt(
                         file_path=diff_file.get_display_path(),
                         change_type=change_type,
                         diff_content=diff_file.diff,
                         review_rules=review_rules,
                     )
-
+                    print(prompt)
                     messages = [
                         {"role": "system", "content": SYSTEM_PROMPT},
                         {"role": "user", "content": prompt},
@@ -308,47 +307,54 @@ class OpenAIReviewer(AIReviewer):
 ## Review Rules
 {rules_text}
 
-## IMPORTANT: How to Read Line Numbers
+## CRITICAL: How to Report Line Numbers
 
-The diff below has line numbers PRE-CALCULATED for you in brackets [OLD:N | NEW:N]:
-- Lines starting with + (additions): Use the number after NEW:
-- Lines starting with - (deletions): Use the number after OLD:
-- Lines starting with ' ' (context): Either number works
+**READ THE LINE NUMBERS FROM THE BRACKETS [OLD:N | NEW:N]**
 
-Example:
-[OLD:10 | NEW:10] function foo() {{
-[OLD:11 | NEW:- ]-  return 1;
-[OLD:-  | NEW:11]+  const x = 1;
-[OLD:-  | NEW:12]+  return x;
-[OLD:12 | NEW:13] }}
+Each line in the diff shows: [OLD:number | NEW:number] prefix code
 
-For the line "+  const x = 1;", report line_number as 11 (from NEW:)
-For the line "-  return 1;", report line_number as 11 (from OLD:)
+**Rules:**
+1. ONLY review lines starting with `+` (added) or `-` (removed)
+2. IGNORE lines starting with ` ` (space) - these are context
+3. For `+` lines: Copy the number AFTER `NEW:`
+4. For `-` lines: Copy the number AFTER `OLD:`
+5. line_number must be a plain INTEGER (no quotes, no text, just the number)
+
+**Example:**
+[OLD:10 | NEW:10] function foo() {{    <-- IGNORE (context)
+[OLD:11 | NEW:- ]-  return 1;          <-- Report: "line_number": 11
+[OLD:-  | NEW:11]+  const x = 1;       <-- Report: "line_number": 11
+[OLD:-  | NEW:12]+  return x;          <-- Report: "line_number": 12
+[OLD:12 | NEW:13] }}                   <-- IGNORE (context)
+
+**Correct output format:**
+{{
+  "reviews": [
+    {{
+      "line_number": 11,
+      "severity": "warning",
+      "description": "variable x is declared but never used"
+    }},
+    {{
+      "line_number": 12,
+      "severity": "suggestion",
+      "description": "consider using early return pattern"
+    }}
+  ]
+}}
+
+**WRONG formats (DO NOT USE):**
+- "line_number": "NEW:11"     <- WRONG! Don't include NEW:
+- "line_number": "11"         <- WRONG! Don't use quotes
+- "line_number": null         <- WRONG! Always provide a number
+- "line_number": "line 11"    <- WRONG! Just the number
 
 ## Diff Content to Review
 --- diff
 {annotated_diff}
 ---
 
-## Output Format (JSON only)
-{{
-  "reviews": [
-    {{
-      "line_number": <copy EXACTLY from brackets above>,
-      "severity": <"critical" | "warning" | "suggestion">,
-      "description": "<describe the issue>"
-    }}
-  ]
-}}
-
-Review focus:
-1. Bugs and logic errors
-2. Security vulnerabilities
-3. Performance issues
-4. Code quality and maintainability
-5. Best practices violations
-
-CRITICAL: Always use the line number shown in [OLD:N | NEW:N] brackets!"""
+Review ONLY lines starting with + or -. Output valid JSON with integer line_numbers."""
         return prompt
 
     def _annotate_diff_with_line_numbers(self, diff_content: str) -> str:
