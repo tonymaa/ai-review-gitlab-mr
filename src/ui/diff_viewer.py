@@ -406,6 +406,9 @@ class CodeDiffViewer(QTextEdit):
         # 显示内容
         self.setPlainText("\n".join(display_lines))
 
+        # 强制刷新行号区域
+        self.line_number_area.update()
+
     def line_number_area_width(self) -> int:
         """计算行号区域宽度"""
         # 包含图标宽度 + 行号宽度
