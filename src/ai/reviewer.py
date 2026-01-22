@@ -204,7 +204,6 @@ class OpenAIReviewer(AIReviewer):
                         diff_content=diff_file.diff,
                         review_rules=review_rules,
                     )
-                    print(prompt)
                     messages = [
                         {"role": "system", "content": SYSTEM_PROMPT},
                         {"role": "user", "content": prompt},
@@ -419,7 +418,6 @@ Review ONLY lines starting with + or -. Output valid JSON with integer line_numb
         try:
             data = json.loads(response)
             reviews = data.get("reviews", [])
-            print(reviews)
             result = []
             for review in reviews:
                 result.append({
