@@ -13,7 +13,6 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QProgressBar,
     QLineEdit,
-    QComboBox,
     QFrame,
 )
 from PyQt6.QtCore import Qt
@@ -33,7 +32,10 @@ class RelatedMRDialog(QDialog):
         self.all_mr_list: List[tuple[MergeRequestInfo, ProjectInfo]] = []
 
         # 数据加载回调函数
-        self._load_data_callback: Optional[Callable[[str], List[tuple[MergeRequestInfo, ProjectInfo]]]] = None
+        self._load_data_callback: Optional[Callable[[], List[tuple[MergeRequestInfo, ProjectInfo]]]] = None
+
+        # MR打开回调函数
+        self._open_mr_callback: Optional[Callable[[MergeRequestInfo, ProjectInfo], None]] = None
 
         self._setup_ui()
 
@@ -70,6 +72,11 @@ class RelatedMRDialog(QDialog):
         button_layout = QHBoxLayout()
         button_layout.addStretch()
 
+        self.open_btn = QPushButton("打开")
+        self.open_btn.setEnabled(False)
+        self.open_btn.clicked.connect(self._on_open_clicked)
+        button_layout.addWidget(self.open_btn)
+
         self.close_btn = QPushButton("关闭")
         self.close_btn.clicked.connect(self.accept)
         button_layout.addWidget(self.close_btn)
@@ -102,6 +109,7 @@ class RelatedMRDialog(QDialog):
         tree.setSortingEnabled(True)
         tree.setEditTriggers(QTreeWidget.EditTrigger.NoEditTriggers)
         tree.setSelectionMode(QTreeWidget.SelectionMode.SingleSelection)
+        tree.itemSelectionChanged.connect(self._on_selection_changed)
 
         # 设置列宽
         header = tree.header()
@@ -141,6 +149,14 @@ class RelatedMRDialog(QDialog):
             callback: 返回MR列表的回调函数
         """
         self._load_data_callback = callback
+
+    def set_open_mr_callback(self, callback: Callable[[MergeRequestInfo, ProjectInfo], None]):
+        """设置MR打开回调函数
+
+        Args:
+            callback: 接收MR和项目信息的回调函数，用于打开MR
+        """
+        self._open_mr_callback = callback
 
     def load_merge_requests(self, mr_list):
         """
@@ -262,6 +278,25 @@ class RelatedMRDialog(QDialog):
     def _on_search_text_changed(self, _text: str) -> None:
         """处理搜索文本变化"""
         self._refresh_display()
+
+    def _on_selection_changed(self):
+        """处理选择变化"""
+        has_selection = bool(self.mr_tree.selectedItems())
+        self.open_btn.setEnabled(has_selection)
+
+    def _on_open_clicked(self):
+        """处理打开按钮点击"""
+        selected_items = self.mr_tree.selectedItems()
+        if not selected_items:
+            return
+
+        item = selected_items[0]
+        mr, project = item.data(0, Qt.ItemDataRole.UserRole)
+
+        if self._open_mr_callback:
+            self._open_mr_callback(mr, project)
+            # 打开后关闭对话框
+            self.accept()
 
 
     def set_current_user_id(self, user_id: int):

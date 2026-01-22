@@ -32,7 +32,7 @@ from ..core.config import settings
 from ..core.database import DatabaseManager
 from ..core.project_cache import ProjectCache
 from ..gitlab.client import GitLabClient
-from ..gitlab.models import MergeRequestInfo, DiffFile, MRState
+from ..gitlab.models import MergeRequestInfo, DiffFile, MRState, ProjectInfo
 from ..ai.reviewer import create_reviewer, ReviewIssue
 from .mr_list_widget import MRListWidget
 from .diff_viewer import DiffViewerPanel
@@ -934,6 +934,35 @@ class MainWindow(QMainWindow):
             return self.gitlab_client.list_all_merge_requests_related_to_me()
 
         dialog.set_load_data_callback(load_mr_data)
+
+        # 设置MR打开回调函数
+        def open_mr(mr: MergeRequestInfo, project: ProjectInfo):
+
+            # 清空mr列表
+            if self.current_project_id != str(project.id):
+                self.mr_list_widget.load_merge_requests([])
+                self.status_bar.showMessage(f"请刷新")
+
+            # 切换到MR所在的项目
+            self.current_project_id = str(project.id)
+            display_name = f"{project.name} ({project.id})"
+            self.project_label.setText(f"项目: {display_name}")
+
+            # 保存到最近项目缓存
+            project_name = project.path_with_namespace
+            self.project_cache.add_recent_project(self.current_project_id, project_name)
+
+            # 更新最近项目菜单
+            self._update_recent_projects_menu()
+
+            # 加载该项目的MR列表
+            # self._load_merge_requests()
+            
+
+            # 打开选中的MR
+            self._on_mr_selected(mr)
+
+        dialog.set_open_mr_callback(open_mr)
 
         # 设置当前用户ID用于角色筛选
         current_user = self.gitlab_client.get_current_user()
