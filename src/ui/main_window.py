@@ -868,12 +868,12 @@ class MainWindow(QMainWindow):
 
         # 设置当前项目
         self.current_project_id = project_id
-        self.project_label.setText(f"项目: {project_id}")
 
         # 重新添加到缓存（更新访问时间）
         project_info = self.gitlab_client.get_project(project_id)
         project_name = project_info.path_with_namespace if project_info else ""
         self.project_cache.add_recent_project(project_id, project_name)
+        self.project_label.setText(f"项目: {project_name}")
 
         # 更新菜单
         self._update_recent_projects_menu()
