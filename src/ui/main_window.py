@@ -1169,6 +1169,19 @@ class MainWindow(QMainWindow):
 
         dialog.set_approve_callbacks(approve_mr, unapprove_mr)
 
+        # 设置显示MR详情回调函数
+        def show_mr_detail(mr: MergeRequestInfo, project: ProjectInfo):
+            """显示MR详情"""
+            from .mr_detail_dialog import MRDetailDialog
+
+            current_user = self.gitlab_client.get_current_user()
+            current_user_id = current_user.get("id") if current_user else 0
+
+            detail_dialog = MRDetailDialog(mr, project, self.gitlab_client, current_user_id, self)
+            detail_dialog.exec()
+
+        dialog.set_show_mr_detail_callback(show_mr_detail)
+
         # 设置当前用户ID用于角色筛选
         current_user = self.gitlab_client.get_current_user()
         if current_user:

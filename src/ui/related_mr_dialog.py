@@ -38,12 +38,16 @@ class RelatedMRDialog(QDialog):
         # MR打开回调函数
         self._open_mr_callback: Optional[Callable[[MergeRequestInfo, ProjectInfo], None]] = None
 
+        # MR详情回调函数
+        self._show_mr_detail_callback: Optional[Callable[[MergeRequestInfo, ProjectInfo], None]] = None
+
         # MR approve/unapprove 回调函数
         self._approve_callback: Optional[Callable[[MergeRequestInfo, ProjectInfo], None]] = None
         self._unapprove_callback: Optional[Callable[[MergeRequestInfo, ProjectInfo], None]] = None
 
-        # 保存 GitLabClient 引用
+        # 保存 GitLabClient 引用和当前用户ID
         self._gitlab_client = None
+        self._current_user_id = None
 
         self._setup_ui()
 
@@ -86,6 +90,12 @@ class RelatedMRDialog(QDialog):
         self.approve_btn.setEnabled(False)
         self.approve_btn.clicked.connect(self._on_approve_clicked)
         button_layout.addWidget(self.approve_btn)
+
+        self.detail_btn = QPushButton("查看详情")
+        self.detail_btn.setProperty("class", "default")
+        self.detail_btn.setEnabled(False)
+        self.detail_btn.clicked.connect(self._on_detail_clicked)
+        button_layout.addWidget(self.detail_btn)
 
         self.open_btn = QPushButton("打开")
         self.open_btn.setProperty("class", "primary")
@@ -172,6 +182,14 @@ class RelatedMRDialog(QDialog):
         """
         self._approve_callback = approve_callback
         self._unapprove_callback = unapprove_callback
+
+    def set_show_mr_detail_callback(self, callback: Callable[[MergeRequestInfo, ProjectInfo], None]):
+        """设置显示MR详情回调函数
+
+        Args:
+            callback: 接收MR和项目信息的回调函数，用于显示MR详情
+        """
+        self._show_mr_detail_callback = callback
 
     def set_gitlab_client(self, client):
         """设置GitLab客户端
@@ -314,6 +332,7 @@ class RelatedMRDialog(QDialog):
         has_selection = bool(self.mr_tree.selectedItems())
         self.open_btn.setEnabled(has_selection)
         self.approve_btn.setEnabled(has_selection)
+        self.detail_btn.setEnabled(has_selection)
 
         # 更新approve按钮文本
         if has_selection:
@@ -325,6 +344,18 @@ class RelatedMRDialog(QDialog):
                 self.approve_btn.setText("同意")
         else:
             self.approve_btn.setText("同意")
+
+    def _on_detail_clicked(self):
+        """处理查看详情按钮点击"""
+        selected_items = self.mr_tree.selectedItems()
+        if not selected_items:
+            return
+
+        item = selected_items[0]
+        mr, project = item.data(0, Qt.ItemDataRole.UserRole)
+
+        if self._show_mr_detail_callback:
+            self._show_mr_detail_callback(mr, project)
 
     def _on_approve_clicked(self):
         """处理同意/取消同意按钮点击"""

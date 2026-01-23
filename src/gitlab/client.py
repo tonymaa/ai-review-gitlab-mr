@@ -157,7 +157,7 @@ class GitLabClient:
 
     def list_all_merge_requests_related_to_me(
         self,
-        state: str = "opened",
+        state: str = "closed",
     ) -> List[tuple[MergeRequestInfo, ProjectInfo]]:
         """
         列出所有项目中与当前用户相关的Merge Requests（我是reviewer或assignee）
@@ -431,6 +431,66 @@ class GitLabClient:
             return True
         except GitlabError as e:
             logger.error(f"添加MR评论失败: {e}")
+            return False
+
+    def get_merge_request_notes(
+        self,
+        project_id: str | int,
+        mr_iid: int,
+    ) -> List[Dict[str, Any]]:
+        """
+        获取MR的评论列表
+
+        Args:
+            project_id: 项目ID或路径
+            mr_iid: MR的IID
+
+        Returns:
+            评论列表
+        """
+        try:
+            project = self._client.projects.get(project_id)
+            mr = project.mergerequests.get(mr_iid)
+            notes = mr.notes.list(all=True)
+
+            # 转换为字典列表
+            result = []
+            for note in notes:
+                result.append(note.asdict())
+
+            return result
+
+        except GitlabError as e:
+            logger.error(f"获取MR评论失败: {e}")
+            return []
+
+    def delete_merge_request_note(
+        self,
+        project_id: str | int,
+        mr_iid: int,
+        note_id: int,
+    ) -> bool:
+        """
+        删除MR评论
+
+        Args:
+            project_id: 项目ID或路径
+            mr_iid: MR的IID
+            note_id: 评论ID
+
+        Returns:
+            是否成功
+        """
+        try:
+            project = self._client.projects.get(project_id)
+            mr = project.mergerequests.get(mr_iid)
+            note = mr.notes.get(note_id)
+            note.delete()
+            logger.info(f"成功删除MR评论 {note_id}")
+            return True
+
+        except GitlabError as e:
+            logger.error(f"删除MR评论失败: {e}")
             return False
 
     def create_merge_request_discussion(
