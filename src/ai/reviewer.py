@@ -138,7 +138,7 @@ class OpenAIReviewer(AIReviewer):
         response_format: Optional[str] = None,
     ) -> str:
         """
-        调用OpenAI API
+        调用OpenAI API (使用流式输出，实时显示到控制台)
 
         Args:
             messages: 消息列表
@@ -152,14 +152,26 @@ class OpenAIReviewer(AIReviewer):
             "messages": messages,
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
+            "stream": True,  # 启用流式输出
         }
 
         if response_format == "json":
             kwargs["response_format"] = {"type": "json_object"}
 
         try:
-            response = await self.client.chat.completions.create(**kwargs)
-            return response.choices[0].message.content
+            full_content = []
+            print("\n\033[90m┌─ AI Response:\033[0m", end="", flush=True)
+
+            stream = await self.client.chat.completions.create(**kwargs)
+            async for chunk in stream:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    content = chunk.choices[0].delta.content
+                    full_content.append(content)
+                    # 实时输出到控制台（灰色，不干扰正常输出）
+                    print(content, end="", flush=True)
+
+            print("\033[90m\n└─ End\033[0m\n")  # 结束标记
+            return "".join(full_content)
         except Exception as e:
             logger.error(f"OpenAI API调用失败: {e}")
             raise
@@ -623,14 +635,16 @@ class OllamaReviewer(AIReviewer):
             raise ImportError("请安装httpx包: pip install httpx")
 
     async def _call_api(self, prompt: str) -> str:
-        """调用Ollama API"""
+        """调用Ollama API (使用流式输出，实时显示到控制台)"""
         try:
+            print("\n\033[90m┌─ AI Response:\033[0m", end="", flush=True)
+
             response = await self.client.post(
                 f"{self.base_url}/api/generate",
                 json={
                     "model": self.model,
                     "prompt": prompt,
-                    "stream": False,
+                    "stream": True,  # 启用流式输出
                     "options": {
                         "temperature": self.temperature,
                         "num_predict": self.max_tokens,
@@ -638,8 +652,20 @@ class OllamaReviewer(AIReviewer):
                 },
             )
             response.raise_for_status()
-            data = response.json()
-            return data.get("response", "")
+
+            full_content = []
+            async for line in response.aiter_lines():
+                if line.strip():
+                    data = json.loads(line)
+                    if "response" in data:
+                        content = data["response"]
+                        full_content.append(content)
+                        print(content, end="", flush=True)
+                    if data.get("done", False):
+                        break
+
+            print("\033[90m\n└─ End\033[0m\n")
+            return "".join(full_content)
         except Exception as e:
             logger.error(f"Ollama API调用失败: {e}")
             raise
