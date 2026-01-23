@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 from ..gitlab.models import MergeRequestInfo, ProjectInfo, MRState
+from .theme import Theme, load_qss_stylesheet
 
 
 class RelatedMRDialog(QDialog):
@@ -27,6 +28,8 @@ class RelatedMRDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("与我相关的MR")
         self.setMinimumSize(900, 600)
+        # 加载外部样式
+        load_qss_stylesheet(self)
 
         # 存储所有MR数据
         self.all_mr_list: List[tuple[MergeRequestInfo, ProjectInfo]] = []
@@ -42,11 +45,12 @@ class RelatedMRDialog(QDialog):
     def _setup_ui(self):
         """设置UI布局"""
         layout = QVBoxLayout(self)
-        layout.setSpacing(8)
+        layout.setSpacing(Theme.PADDING_MD_INT)
+        layout.setContentsMargins(Theme.PADDING_XL_INT, Theme.PADDING_XL_INT, Theme.PADDING_XL_INT, Theme.PADDING_XL_INT)
 
         # 标题说明
         title_label = QLabel("所有项目中assignee或reviewer为我的Merge Request")
-        title_label.setStyleSheet("font-size: 14px; font-weight: bold; padding: 8px;")
+        title_label.setStyleSheet(f"font-size: 14px; font-weight: 600; color: {Theme.TEXT_PRIMARY}; padding: {Theme.PADDING_SM};")
         layout.addWidget(title_label)
 
         # 筛选栏
@@ -65,19 +69,22 @@ class RelatedMRDialog(QDialog):
 
         # 状态栏
         self.status_label = QLabel()
-        self.status_label.setStyleSheet("padding: 4px; background-color: #f8f9fa; border-top: 1px solid #dee2e6;")
+        self.status_label.setProperty("class", "status-bar")
         layout.addWidget(self.status_label)
 
         # 按钮栏
         button_layout = QHBoxLayout()
+        button_layout.setSpacing(Theme.PADDING_SM_INT)
         button_layout.addStretch()
 
         self.open_btn = QPushButton("打开")
+        self.open_btn.setProperty("class", "primary")
         self.open_btn.setEnabled(False)
         self.open_btn.clicked.connect(self._on_open_clicked)
         button_layout.addWidget(self.open_btn)
 
         self.close_btn = QPushButton("关闭")
+        self.close_btn.setProperty("class", "default")
         self.close_btn.clicked.connect(self.accept)
         button_layout.addWidget(self.close_btn)
 
@@ -86,14 +93,18 @@ class RelatedMRDialog(QDialog):
     def _create_filter_bar(self) -> QFrame:
         """创建筛选栏"""
         filter_bar = QFrame()
-        filter_bar.setStyleSheet("background-color: #ffffff; padding: 4px; border-bottom: 1px solid #dee2e6;")
+        filter_bar.setProperty("class", "toolbar")
 
         layout = QHBoxLayout(filter_bar)
-        layout.setContentsMargins(4, 2, 4, 2)
+        layout.setContentsMargins(Theme.PADDING_SM_INT, Theme.PADDING_XS_INT, Theme.PADDING_SM_INT, Theme.PADDING_XS_INT)
+        layout.setSpacing(Theme.PADDING_XS_INT)
 
         # 搜索框
-        layout.addWidget(QLabel("搜索:"))
+        search_label = QLabel("搜索:")
+        search_label.setStyleSheet(f"color: {Theme.TEXT_SECONDARY}; font-size: 12px;")
+        layout.addWidget(search_label)
         self.search_input = QLineEdit()
+        self.search_input.setProperty("class", "input")
         self.search_input.setPlaceholderText("搜索标题、作者、项目...")
         self.search_input.textChanged.connect(self._on_search_text_changed)
         layout.addWidget(self.search_input)
@@ -122,23 +133,7 @@ class RelatedMRDialog(QDialog):
         header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
 
         # 设置样式
-        tree.setStyleSheet("""
-            QTreeWidget {
-                border: 1px solid #dee2e6;
-                font-size: 11px;
-            }
-            QTreeWidget::item {
-                padding: 4px;
-                border-bottom: 1px solid #f1f3f5;
-            }
-            QTreeWidget::item:selected {
-                background-color: #e7f5ff;
-                color: #1971c2;
-            }
-            QTreeWidget::item:hover {
-                background-color: #f8f9fa;
-            }
-        """)
+        load_qss_stylesheet(tree)
 
         return tree
 
@@ -341,12 +336,12 @@ class RelatedMRDialog(QDialog):
     def _get_state_color(self, state: MRState) -> str:
         """获取状态颜色"""
         color_map = {
-            MRState.OPENED: "#228be6",  # 蓝色
-            MRState.MERGED: "#40c057",  # 绿色
-            MRState.CLOSED: "#868e96",  # 灰色
-            MRState.LOCKED: "#fa5252",  # 红色
+            MRState.OPENED: Theme.PRIMARY,  # 蓝色
+            MRState.MERGED: Theme.SUCCESS,  # 绿色
+            MRState.CLOSED: Theme.TEXT_TERTIARY,  # 灰色
+            MRState.LOCKED: Theme.ERROR,  # 红色
         }
-        return color_map.get(state, "#000000")
+        return color_map.get(state, Theme.TEXT_PRIMARY)
 
     def set_loading(self, loading: bool, text: str = ""):
         """设置加载状态"""

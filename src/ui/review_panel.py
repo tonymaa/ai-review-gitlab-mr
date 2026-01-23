@@ -20,6 +20,7 @@ from PyQt6.QtGui import QTextDocument, QFont
 
 from ..gitlab.models import AIReviewResult, ReviewComment
 from ..ai.reviewer import AIReviewer, ReviewIssue
+from .theme import Theme, load_qss_stylesheet
 
 
 class ReviewWorkerThread(QThread):
@@ -71,43 +72,39 @@ class IssueWidget(QFrame):
     def _setup_ui(self):
         """设置UI"""
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(4)
+        layout.setContentsMargins(Theme.PADDING_MD_INT, Theme.PADDING_MD_INT, Theme.PADDING_MD_INT, Theme.PADDING_MD_INT)
+        layout.setSpacing(Theme.PADDING_XS_INT)
 
         # 根据严重程度设置颜色
         severity_colors = {
-            "critical": "#fa5252",
-            "warning": "#fab005",
-            "suggestion": "#40c057",
+            "critical": Theme.ERROR,
+            "warning": Theme.WARNING,
+            "suggestion": Theme.SUCCESS,
         }
         severity_labels = {
             "critical": "严重",
             "warning": "警告",
             "suggestion": "建议",
         }
-        color = severity_colors.get(self.issue.severity, "#868e96")
+        color = severity_colors.get(self.issue.severity, Theme.TEXT_TERTIARY)
         label = severity_labels.get(self.issue.severity, "其他")
 
         # 设置样式
         self.setStyleSheet(f"""
-            QFrame {{
-                background-color: #f8f9fa;
-                border: 1px solid #dee2e6;
-                border-radius: 4px;
-                border-left: 3px solid {color};
-                margin: 2px;
-            }}
-            QFrame:hover {{
-                background-color: #e9ecef;
-            }}
+            background-color: {Theme.BG_BASE};
+            border: 1px solid {Theme.BORDER_COLOR};
+            border-radius: {Theme.RADIUS_BASE};
+            border-left: 3px solid {color};
+            margin: {Theme.PADDING_XS};
         """)
 
         # 标题栏
         title_layout = QHBoxLayout()
+        title_layout.setSpacing(Theme.PADDING_XS_INT)
 
         # 严重程度标签
         severity_label = QLabel(f"[{label}]")
-        severity_label.setStyleSheet(f"color: {color}; font-weight: bold;")
+        severity_label.setStyleSheet(f"color: {color}; font-weight: 600;")
         title_layout.addWidget(severity_label)
 
         # 位置信息
@@ -116,7 +113,7 @@ class IssueWidget(QFrame):
             if self.issue.line_number:
                 location += f":{self.issue.line_number}"
             location_label = QLabel(location)
-            location_label.setStyleSheet("color: #868e96; font-size: 10px;")
+            location_label.setStyleSheet(f"color: {Theme.TEXT_TERTIARY}; font-size: 10px;")
             title_layout.addWidget(location_label)
 
         title_layout.addStretch()
@@ -125,7 +122,7 @@ class IssueWidget(QFrame):
         # 描述
         desc_label = QLabel(self.issue.description)
         desc_label.setWordWrap(True)
-        desc_label.setStyleSheet("padding: 4px;")
+        desc_label.setStyleSheet(f"padding: {Theme.PADDING_XS}; color: {Theme.TEXT_PRIMARY};")
         layout.addWidget(desc_label)
 
 
@@ -155,23 +152,7 @@ class ReviewPanel(QWidget):
 
         # 主内容区域（使用Tab）
         self.tab_widget = QTabWidget()
-        self.tab_widget.setStyleSheet("""
-            QTabWidget::pane {
-                border: 1px solid #dee2e6;
-                background-color: #ffffff;
-            }
-            QTabBar::tab {
-                padding: 8px 16px;
-                background-color: #f8f9fa;
-                border: 1px solid #dee2e6;
-                border-bottom: none;
-                margin-right: 2px;
-            }
-            QTabBar::tab:selected {
-                background-color: #ffffff;
-                font-weight: bold;
-            }
-        """)
+        load_qss_stylesheet(self.tab_widget)
 
         # 摘要Tab
         self.summary_tab = self._create_summary_tab()
@@ -194,20 +175,22 @@ class ReviewPanel(QWidget):
     def _create_title_bar(self) -> QFrame:
         """创建标题栏"""
         title_bar = QFrame()
-        title_bar.setStyleSheet("background-color: #f8f9fa; border-bottom: 1px solid #dee2e6; padding: 8px;")
+        load_qss_stylesheet(title_bar)
 
         layout = QHBoxLayout(title_bar)
-        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setContentsMargins(Theme.PADDING_MD_INT, Theme.PADDING_SM_INT, Theme.PADDING_MD_INT, Theme.PADDING_SM_INT)
+        layout.setSpacing(Theme.PADDING_SM_INT)
 
         # 标题
         title = QLabel("AI审查意见")
-        title.setStyleSheet("font-weight: bold; font-size: 14px;")
+        title.setStyleSheet(f"font-weight: 600; font-size: 14px; color: {Theme.TEXT_PRIMARY};")
         layout.addWidget(title)
 
         layout.addStretch()
 
         # 开始审查按钮
         self.start_review_btn = QPushButton("开始审查")
+        self.start_review_btn.setProperty("class", "primary")
         self.start_review_btn.clicked.connect(self._on_start_review)
         layout.addWidget(self.start_review_btn)
 
@@ -217,39 +200,49 @@ class ReviewPanel(QWidget):
         """创建摘要Tab"""
         widget = QWidget()
         layout = QVBoxLayout(widget)
+        layout.setContentsMargins(Theme.PADDING_LG_INT, Theme.PADDING_LG_INT, Theme.PADDING_LG_INT, Theme.PADDING_LG_INT)
+        layout.setSpacing(Theme.PADDING_MD_INT)
 
         # 评分
         score_layout = QHBoxLayout()
-        score_layout.addWidget(QLabel("整体评分:"))
+        score_label = QLabel("整体评分:")
+        score_label.setStyleSheet(f"color: {Theme.TEXT_SECONDARY}; font-size: 13px;")
+        score_layout.addWidget(score_label)
         self.score_label = QLabel("-")
-        self.score_label.setStyleSheet("font-size: 24px; font-weight: bold; color: #228be6;")
+        self.score_label.setStyleSheet(f"font-size: 24px; font-weight: 600; color: {Theme.PRIMARY};")
         score_layout.addWidget(self.score_label)
-        score_layout.addWidget(QLabel("/ 10"))
+        max_score_label = QLabel("/ 10")
+        max_score_label.setStyleSheet(f"color: {Theme.TEXT_SECONDARY}; font-size: 13px;")
+        score_layout.addWidget(max_score_label)
         score_layout.addStretch()
         layout.addLayout(score_layout)
 
         # 摘要文本
-        layout.addWidget(QLabel("审查摘要:"))
+        summary_title = QLabel("审查摘要:")
+        summary_title.setStyleSheet(f"color: {Theme.TEXT_SECONDARY}; font-size: 12px;")
+        layout.addWidget(summary_title)
         self.summary_text = QTextEdit()
+        self.summary_text.setProperty("class", "input")
         self.summary_text.setReadOnly(True)
         self.summary_text.setMaximumHeight(150)
         layout.addWidget(self.summary_text)
 
         # 统计信息
         stats_layout = QHBoxLayout()
+        stats_layout.setSpacing(Theme.PADDING_MD_INT)
         stats_layout.addWidget(QLabel("问题:"))
         self.issues_count_label = QLabel("0")
-        self.issues_count_label.setStyleSheet("color: #fa5252; font-weight: bold;")
+        self.issues_count_label.setStyleSheet(f"color: {Theme.ERROR}; font-weight: 600;")
         stats_layout.addWidget(self.issues_count_label)
 
         stats_layout.addWidget(QLabel("| 警告:"))
         self.warnings_count_label = QLabel("0")
-        self.warnings_count_label.setStyleSheet("color: #fab005; font-weight: bold;")
+        self.warnings_count_label.setStyleSheet(f"color: {Theme.WARNING}; font-weight: 600;")
         stats_layout.addWidget(self.warnings_count_label)
 
         stats_layout.addWidget(QLabel("| 建议:"))
         self.suggestions_count_label = QLabel("0")
-        self.suggestions_count_label.setStyleSheet("color: #40c057; font-weight: bold;")
+        self.suggestions_count_label.setStyleSheet(f"color: {Theme.SUCCESS}; font-weight: 600;")
         stats_layout.addWidget(self.suggestions_count_label)
 
         stats_layout.addStretch()
