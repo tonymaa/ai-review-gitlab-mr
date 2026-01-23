@@ -945,15 +945,7 @@ class MainWindow(QMainWindow):
 
         # 创建加载函数
         def load_mr_list():
-            if self.related_mr_action.isChecked():
-                # 只获取与当前用户相关的MR
-                return self.gitlab_client.list_merge_requests_related_to_me(
-                    project_id=self.current_project_id,
-                    state="all",
-                )
-            else:
-                # 获取所有MR
-                return self.gitlab_client.list_merge_requests(
+            return self.gitlab_client.list_merge_requests(
                     project_id=self.current_project_id,
                     state="all",
                 )

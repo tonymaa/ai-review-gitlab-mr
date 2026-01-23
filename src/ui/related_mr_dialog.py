@@ -108,7 +108,7 @@ class RelatedMRDialog(QDialog):
     def _create_mr_tree(self) -> QTreeWidget:
         """创建MR列表树"""
         tree = QTreeWidget()
-        tree.setHeaderLabels(["项目", "!MR", "标题", "作者", "状态", "更新时间"])
+        tree.setHeaderLabels(["项目", "!MR", "标题", "作者", "评论", "状态", "更新时间"])
         tree.setAlternatingRowColors(True)
         tree.setRootIsDecorated(False)
         tree.setSortingEnabled(True)
@@ -125,6 +125,7 @@ class RelatedMRDialog(QDialog):
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
 
         return tree
 
@@ -243,12 +244,13 @@ class RelatedMRDialog(QDialog):
             f"!{mr.iid}",
             mr.title,
             mr.author.name if mr.author else "未知",
+            str(mr.user_notes_count),
             state_text,
             time_str,
         ])
 
         # 设置状态颜色
-        item.setForeground(4, QColor(state_color))
+        item.setForeground(5, QColor(state_color))
 
         # 存储MR和项目对象
         item.setData(0, Qt.ItemDataRole.UserRole, (mr, project))

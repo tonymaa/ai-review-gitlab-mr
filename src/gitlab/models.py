@@ -69,6 +69,7 @@ class MergeRequestInfo:
     additions: int = 0
     deletions: int = 0
     changed_files: int = 0
+    user_notes_count: int = 0
 
     # 链接
     web_url: Optional[str] = None
@@ -131,6 +132,7 @@ class MergeRequestInfo:
             additions=data.get("additions", 0),
             deletions=data.get("deletions", 0),
             changed_files=data.get("changed_files", 0),
+            user_notes_count=data.get("user_notes_count", 0),
             web_url=data.get("web_url"),
             diff_refs=data.get("diff_refs"),
             labels=data.get("labels", []),
