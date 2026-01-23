@@ -14,9 +14,10 @@ from PyQt6.QtWidgets import (
     QProgressBar,
     QLineEdit,
     QFrame,
+    QApplication,
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QColor, QClipboard
 from ..gitlab.models import MergeRequestInfo, ProjectInfo, MRState
 from .theme import Theme
 
@@ -90,6 +91,12 @@ class RelatedMRDialog(QDialog):
         self.approve_btn.setEnabled(False)
         self.approve_btn.clicked.connect(self._on_approve_clicked)
         button_layout.addWidget(self.approve_btn)
+
+        self.copy_link_btn = QPushButton("复制链接")
+        self.copy_link_btn.setProperty("class", "default")
+        self.copy_link_btn.setEnabled(False)
+        self.copy_link_btn.clicked.connect(self._on_copy_link_clicked)
+        button_layout.addWidget(self.copy_link_btn)
 
         self.detail_btn = QPushButton("查看详情")
         self.detail_btn.setProperty("class", "default")
@@ -332,6 +339,7 @@ class RelatedMRDialog(QDialog):
         has_selection = bool(self.mr_tree.selectedItems())
         self.open_btn.setEnabled(has_selection)
         self.approve_btn.setEnabled(has_selection)
+        self.copy_link_btn.setEnabled(has_selection)
         self.detail_btn.setEnabled(has_selection)
 
         # 更新approve按钮文本
@@ -344,6 +352,25 @@ class RelatedMRDialog(QDialog):
                 self.approve_btn.setText("同意")
         else:
             self.approve_btn.setText("同意")
+
+    def _on_copy_link_clicked(self):
+        """处理复制链接按钮点击"""
+        selected_items = self.mr_tree.selectedItems()
+        if not selected_items:
+            return
+
+        item = selected_items[0]
+        mr, _ = item.data(0, Qt.ItemDataRole.UserRole)
+
+        # 获取MR的web_url
+        if mr.web_url:
+            # 复制到剪切板
+            clipboard = QApplication.clipboard()
+            clipboard.setText(mr.web_url)
+            # 显示提示
+            self.status_label.setText(f"已复制链接: {mr.web_url}")
+        else:
+            self.status_label.setText("该MR没有链接")
 
     def _on_detail_clicked(self):
         """处理查看详情按钮点击"""
