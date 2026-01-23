@@ -30,7 +30,6 @@ from pygments.formatters import HtmlFormatter
 from pygments.util import ClassNotFound
 
 from ..gitlab.models import DiffFile
-from .theme import Theme, load_qss_stylesheet
 
 
 class DiffHighlighter(QSyntaxHighlighter):
@@ -39,22 +38,22 @@ class DiffHighlighter(QSyntaxHighlighter):
     def __init__(self, document: QTextDocument):
         super().__init__(document)
 
-        # 定义颜色方案（使用现代化主题色）
+        # 定义颜色方案
         self.addition_format = QTextCharFormat()
-        self.addition_format.setBackground(QColor(Theme.DIFF_ADD_BG))
-        self.addition_format.setForeground(QColor(Theme.DIFF_ADD_TEXT))
+        self.addition_format.setBackground(QColor("#d4edda"))
+        self.addition_format.setForeground(QColor("#155724"))
 
         self.deletion_format = QTextCharFormat()
-        self.deletion_format.setBackground(QColor(Theme.DIFF_DELETE_BG))
-        self.deletion_format.setForeground(QColor(Theme.DIFF_DELETE_TEXT))
+        self.deletion_format.setBackground(QColor("#f8d7da"))
+        self.deletion_format.setForeground(QColor("#721c24"))
 
         self.header_format = QTextCharFormat()
-        self.header_format.setBackground(QColor(Theme.DIFF_HEADER_BG))
-        self.header_format.setForeground(QColor(Theme.DIFF_HEADER_TEXT))
+        self.header_format.setBackground(QColor("#e2e3e5"))
+        self.header_format.setForeground(QColor("#383d41"))
         self.header_format.setFontWeight(QFont.Weight.Bold)
 
         self.context_format = QTextCharFormat()
-        self.context_format.setForeground(QColor(Theme.DIFF_CONTEXT_TEXT))
+        self.context_format.setForeground(QColor("#6c757d"))
 
     def highlightBlock(self, text: str):
         """高亮文本块"""
@@ -99,7 +98,7 @@ class LineNumberArea(QWidget):
         from PyQt6.QtCore import QPointF, QRectF
 
         painter = QPainter(self)
-        painter.fillRect(event.rect(), QColor(Theme.BG_LAYOUT))
+        painter.fillRect(event.rect(), QColor("#f1f3f5"))
 
         # 获取文档和布局
         document = self.editor.document()
@@ -143,17 +142,17 @@ class LineNumberArea(QWidget):
 
                     # 根据行类型选择颜色
                     if line_type == "addition":
-                        bg_color = QColor(Theme.DIFF_ADD_BG)
-                        text_color = QColor(Theme.DIFF_ADD_TEXT)
+                        bg_color = QColor("#d4edda")
+                        text_color = QColor("#155724")
                     elif line_type == "deletion":
-                        bg_color = QColor(Theme.DIFF_DELETE_BG)
-                        text_color = QColor(Theme.DIFF_DELETE_TEXT)
+                        bg_color = QColor("#f8d7da")
+                        text_color = QColor("#721c24")
                     elif line_type == "header":
-                        bg_color = QColor(Theme.DIFF_HEADER_BG)
-                        text_color = QColor(Theme.DIFF_HEADER_TEXT)
+                        bg_color = QColor("#e2e3e5")
+                        text_color = QColor("#383d41")
                     else:
-                        bg_color = QColor(Theme.BG_BASE)
-                        text_color = QColor(Theme.DIFF_CONTEXT_TEXT)
+                        bg_color = QColor("#ffffff")
+                        text_color = QColor("#6c757d")
 
                     # 绘制背景
                     painter.fillRect(0, int(block_rect.top()), self.width(), int(block_rect.height()), bg_color)
@@ -210,12 +209,12 @@ class LineNumberArea(QWidget):
         path.lineTo(tail_x, tail_y + tail_size / 2)
 
         # 填充气泡
-        painter.setPen(QPen(QColor(Theme.TEXT_TERTIARY), 1.5))
-        painter.setBrush(QColor(Theme.BG_LAYOUT))
+        painter.setPen(QPen(QColor("#6c757d"), 1.5))
+        painter.setBrush(QColor("#f8f9fa"))
         painter.drawPath(path)
 
         # 绘制三个小点表示评论
-        dot_color = QColor(Theme.TEXT_TERTIARY)
+        dot_color = QColor("#6c757d")
         dot_radius = 1.2
         center_y = rect.center().y()
 
@@ -317,12 +316,14 @@ class CodeDiffViewer(QTextEdit):
         self.setReadOnly(True)
 
         # 设置样式
-        self.setStyleSheet(f"""
-            background-color: {Theme.BG_BASE};
-            border: 1px solid {Theme.BORDER_COLOR};
-            border-right: none;
-            border-radius: {Theme.RADIUS_BASE} 0 0 {Theme.RADIUS_BASE};
-            padding: 0px;
+        self.setStyleSheet("""
+            QTextEdit {
+                background-color: #ffffff;
+                border: 1px solid #dee2e6;
+                border-right: none;
+                border-radius: 4px 0 0 4px;
+                padding: 0px;
+            }
         """)
 
         # 当前显示的diff文件
@@ -502,7 +503,7 @@ class CodeDiffViewer(QTextEdit):
 
         # 创建高亮格式
         highlight_format = QTextCharFormat()
-        highlight_format.setBackground(QColor(Theme.WARNING))  # 黄色高亮
+        highlight_format.setBackground(QColor("#fff3cd"))  # 黄色高亮
 
         # 创建高亮选区
         highlight = QTextEdit.ExtraSelection()
@@ -542,9 +543,6 @@ class DiffViewerPanel(QWidget):
 
     def _setup_ui(self):
         """设置UI布局"""
-        # 加载外部QSS样式
-        load_qss_stylesheet(self)
-
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -555,20 +553,34 @@ class DiffViewerPanel(QWidget):
 
         # 文件选择下拉框
         file_selector_layout = QHBoxLayout()
-        file_selector_layout.setSpacing(Theme.PADDING_SM_INT)
-        file_label = QLabel("文件:")
-        file_label.setStyleSheet(f"color: {Theme.TEXT_SECONDARY};")
-        file_selector_layout.addWidget(file_label)
+        file_selector_layout.addWidget(QLabel("文件:"))
 
         self.file_combo = QComboBox()
         self.file_combo.setMinimumWidth(400)
-        # file_combo will be styled by QSS automatically
         self.file_combo.currentIndexChanged.connect(self._on_file_changed)
         file_selector_layout.addWidget(self.file_combo)
 
         # AI评论当前文件按钮
         self.ai_review_file_btn = QPushButton("AI评论当前文件")
-        self.ai_review_file_btn.setProperty("class", "primary")
+        self.ai_review_file_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #7c4dff;
+                color: white;
+                border: none;
+                padding: 6px 12px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #6200ea;
+            }
+            QPushButton:pressed {
+                background-color: #5200cc;
+            }
+            QPushButton:disabled {
+                background-color: #b0a0ff;
+            }
+        """)
         self.ai_review_file_btn.clicked.connect(self._on_ai_review_current_file)
         file_selector_layout.addWidget(self.ai_review_file_btn)
 
@@ -577,7 +589,7 @@ class DiffViewerPanel(QWidget):
 
         # 代码查看器容器（包含行号条和代码区域）
         viewer_container = QWidget()
-        viewer_container.setStyleSheet(f"background-color: {Theme.BG_BASE};")
+        viewer_container.setStyleSheet("background-color: #ffffff;")
         viewer_layout = QHBoxLayout(viewer_container)
         viewer_layout.setContentsMargins(0, 0, 0, 0)
         viewer_layout.setSpacing(0)
@@ -594,21 +606,19 @@ class DiffViewerPanel(QWidget):
 
         # 状态栏
         self.status_label = QLabel()
-        self.status_label.setProperty("class", "status-bar")
+        self.status_label.setStyleSheet("padding: 4px; background-color: #f8f9fa; border-top: 1px solid #dee2e6;")
         layout.addWidget(self.status_label)
 
     def _create_toolbar(self) -> QFrame:
         """创建工具栏"""
         toolbar = QFrame()
-        toolbar.setProperty("class", "toolbar")
+        toolbar.setStyleSheet("background-color: #f8f9fa; border-bottom: 1px solid #dee2e6; padding: 4px;")
 
         layout = QHBoxLayout(toolbar)
-        layout.setContentsMargins(Theme.PADDING_MD_INT, Theme.PADDING_SM_INT, Theme.PADDING_MD_INT, Theme.PADDING_SM_INT)
-        layout.setSpacing(Theme.PADDING_SM_INT)
+        layout.setContentsMargins(8, 4, 8, 4)
 
         # 统计标签
         self.stats_label = QLabel()
-        self.stats_label.setStyleSheet(f"color: {Theme.TEXT_SECONDARY}; font-size: 11px;")
         layout.addWidget(self.stats_label)
 
         layout.addStretch()

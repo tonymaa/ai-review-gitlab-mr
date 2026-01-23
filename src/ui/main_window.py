@@ -38,7 +38,6 @@ from .mr_list_widget import MRListWidget
 from .diff_viewer import DiffViewerPanel
 from .comment_panel import CommentPanel
 from .related_mr_dialog import RelatedMRDialog
-from .theme import Theme, load_qss_stylesheet
 
 logger = logging.getLogger(__name__)
 
@@ -190,78 +189,42 @@ class ConfigDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("配置")
         self.setMinimumWidth(500)
-        # 加载外部样式
-        load_qss_stylesheet(self)
         self._setup_ui()
 
     def _setup_ui(self):
         """设置UI"""
         layout = QFormLayout(self)
-        layout.setContentsMargins(Theme.PADDING_XL_INT, Theme.PADDING_XL_INT, Theme.PADDING_XL_INT, Theme.PADDING_XL_INT)
-        layout.setSpacing(Theme.PADDING_MD_INT)
-
-        # 标题
-        title = QLabel("配置")
-        title.setStyleSheet(f"font-size: 18px; font-weight: 600; color: {Theme.TEXT_PRIMARY}; margin-bottom: {Theme.PADDING_SM};")
-        layout.addRow(title)
-        layout.addRow(QLabel(""))  # 空行
-        layout.addRow(QLabel(""))  # 空行
-
-        # GitLab配置标题
-        gitlab_title = QLabel("GitLab 配置")
-        gitlab_title.setStyleSheet(f"font-size: 13px; font-weight: 600; color: {Theme.TEXT_SECONDARY};")
-        layout.addRow(gitlab_title)
 
         # GitLab配置
         self.gitlab_url_input = QLineEdit(settings.gitlab.url)
-        self.gitlab_url_input.setProperty("class", "input")
         layout.addRow("GitLab URL:", self.gitlab_url_input)
 
         self.gitlab_token_input = QLineEdit(settings.gitlab.token)
         self.gitlab_token_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.gitlab_token_input.setProperty("class", "input")
         layout.addRow("GitLab Token:", self.gitlab_token_input)
 
         self.project_id_input = QLineEdit(settings.gitlab.default_project_id or "")
-        self.project_id_input.setProperty("class", "input")
         layout.addRow("默认项目ID:", self.project_id_input)
-
-        layout.addRow(QLabel(""))  # 空行
-
-        # AI配置标题
-        ai_title = QLabel("AI 配置")
-        ai_title.setStyleSheet(f"font-size: 13px; font-weight: 600; color: {Theme.TEXT_SECONDARY};")
-        layout.addRow(ai_title)
 
         # AI配置
         ai_provider = settings.ai.provider
         self.ai_provider_input = QLineEdit(ai_provider)
-        self.ai_provider_input.setProperty("class", "input")
         layout.addRow("AI提供商:", self.ai_provider_input)
 
         if ai_provider == "openai":
             self.openai_key_input = QLineEdit(settings.ai.openai.api_key)
             self.openai_key_input.setEchoMode(QLineEdit.EchoMode.Password)
-            self.openai_key_input.setProperty("class", "input")
             layout.addRow("OpenAI API Key:", self.openai_key_input)
 
             self.openai_model_input = QLineEdit(settings.ai.openai.model)
-            self.openai_model_input.setProperty("class", "input")
             layout.addRow("OpenAI 模型:", self.openai_model_input)
-
-        layout.addRow(QLabel(""))  # 空行
-        layout.addRow(QLabel(""))  # 空行
 
         # 按钮
         buttons = QHBoxLayout()
-        buttons.setSpacing(Theme.PADDING_SM_INT)
         save_btn = QPushButton("保存")
-        save_btn.setProperty("class", "primary")
         save_btn.clicked.connect(self.accept)
         cancel_btn = QPushButton("取消")
-        cancel_btn.setProperty("class", "default")
         cancel_btn.clicked.connect(self.reject)
-        buttons.addStretch()
         buttons.addWidget(save_btn)
         buttons.addWidget(cancel_btn)
         layout.addRow(buttons)
@@ -288,8 +251,6 @@ class ProjectSelectDialog(QDialog):
         self.projects = []
         self.async_thread: Optional[QThread] = None
         self.async_worker: Optional[AsyncWorker] = None
-        # 加载外部样式
-        load_qss_stylesheet(self)
         self._setup_ui()
         # 延迟加载项目，避免在构造函数中执行异步操作
         QTimer.singleShot(100, self._load_projects_async)
@@ -297,27 +258,21 @@ class ProjectSelectDialog(QDialog):
     def _setup_ui(self):
         """设置UI"""
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(Theme.PADDING_XL_INT, Theme.PADDING_XL_INT, Theme.PADDING_XL_INT, Theme.PADDING_XL_INT)
-        layout.setSpacing(Theme.PADDING_MD_INT)
+        layout.setSpacing(12)
 
         # 标题和说明
         title_label = QLabel("选择项目")
-        title_label.setStyleSheet(f"font-size: 18px; font-weight: 600; color: {Theme.TEXT_PRIMARY};")
+        title_label.setStyleSheet("font-size: 16px; font-weight: bold;")
         layout.addWidget(title_label)
 
-        desc_label = QLabel("请从下拉列表中选择一个项目")
-        desc_label.setStyleSheet(f"color: {Theme.TEXT_SECONDARY}; margin-bottom: {Theme.PADDING_MD};")
+        desc_label = QLabel("请从下拉列表中选择一个项目:")
         layout.addWidget(desc_label)
 
         # 搜索框
         search_layout = QHBoxLayout()
-        search_layout.setSpacing(Theme.PADDING_SM_INT)
-        search_label = QLabel("搜索:")
-        search_label.setStyleSheet(f"color: {Theme.TEXT_SECONDARY};")
-        search_layout.addWidget(search_label)
+        search_layout.addWidget(QLabel("搜索:"))
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("输入项目名称或路径进行筛选...")
-        self.search_input.setProperty("class", "input")
         self.search_input.textChanged.connect(self._on_search_changed)
         search_layout.addWidget(self.search_input)
         layout.addLayout(search_layout)
@@ -331,27 +286,18 @@ class ProjectSelectDialog(QDialog):
         # 项目详情区域
         self.details_label = QLabel()
         self.details_label.setWordWrap(True)
-        self.details_label.setStyleSheet(f"""
-            color: {Theme.TEXT_SECONDARY};
-            padding: {Theme.PADDING_MD};
-            background-color: {Theme.BG_LAYOUT};
-            border: 1px solid {Theme.BORDER_COLOR};
-            border-radius: {Theme.RADIUS_BASE};
-        """)
+        self.details_label.setStyleSheet("color: #666; padding: 8px; background: #f5f5f5; border-radius: 4px;")
         layout.addWidget(self.details_label)
 
         layout.addStretch()
 
         # 按钮
         buttons = QHBoxLayout()
-        buttons.setSpacing(Theme.PADDING_SM_INT)
         buttons.addStretch()
         self.ok_btn = QPushButton("确定")
-        self.ok_btn.setProperty("class", "primary")
         self.ok_btn.clicked.connect(self.accept)
         self.ok_btn.setEnabled(False)
         cancel_btn = QPushButton("取消")
-        cancel_btn.setProperty("class", "default")
         cancel_btn.clicked.connect(self.reject)
         buttons.addWidget(self.ok_btn)
         buttons.addWidget(cancel_btn)
@@ -528,13 +474,6 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("GitLab AI Review")
         self.setMinimumSize(1200, 800)
 
-        # 加载外部QSS样式文件
-        qss_style = load_qss_stylesheet(self)
-        if not qss_style:
-            # 如果外部样式文件加载失败，使用内联样式作为后备
-            from .theme import get_main_window_style
-            self.setStyleSheet(get_main_window_style())
-
         # 应用配置中的窗口大小
         self.resize(settings.app.ui.window_width, settings.app.ui.window_height)
 
@@ -548,19 +487,8 @@ class MainWindow(QMainWindow):
         central_widget = self._create_central_widget()
         self.setCentralWidget(central_widget)
 
-        # 应用滚动条样式到所有子组件
-        self._apply_scrollbar_style(self)
-
         # 创建状态栏
         self._create_status_bar()
-
-    def _apply_scrollbar_style(self, widget):
-        """递归应用滚动条样式到所有子组件"""
-        from .theme import get_scrollbar_style
-        widget.setStyleSheet(widget.styleSheet() + get_scrollbar_style())
-        for child in widget.findChildren(QWidget):
-            if not child.styleSheet() or "scrollbar" not in child.styleSheet().lower():
-                child.setStyleSheet(child.styleSheet() + get_scrollbar_style())
 
     def _create_menu_bar(self):
         """创建菜单栏"""
@@ -658,7 +586,7 @@ class MainWindow(QMainWindow):
 
         # 项目显示
         self.project_label = QLabel()
-        self.project_label.setStyleSheet(f"padding: {Theme.PADDING_SM}; color: {Theme.TEXT_SECONDARY}; font-weight: 500;")
+        self.project_label.setStyleSheet("padding: 4px; color: #495057;")
         toolbar.addWidget(self.project_label)
 
     def _create_central_widget(self) -> QWidget:
@@ -712,7 +640,6 @@ class MainWindow(QMainWindow):
     def _create_status_bar(self):
         """创建状态栏"""
         self.status_bar = QStatusBar()
-        self.status_bar.setProperty("class", "status-bar")
         self.setStatusBar(self.status_bar)
         self.status_bar.showMessage("就绪")
 

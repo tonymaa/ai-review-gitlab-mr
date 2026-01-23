@@ -19,7 +19,6 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QIcon
 
 from ..gitlab.models import MergeRequestInfo, MRState
-from .theme import Theme, load_qss_stylesheet
 
 
 class MRListWidget(QWidget):
@@ -60,28 +59,26 @@ class MRListWidget(QWidget):
 
         # 状态栏
         self.status_label = QLabel()
-        self.status_label.setProperty("class", "status-bar")
+        self.status_label.setStyleSheet("padding: 4px; background-color: #f8f9fa; border-top: 1px solid #dee2e6;")
         layout.addWidget(self.status_label)
 
     def _create_title_bar(self) -> QFrame:
         """创建标题栏"""
         title_bar = QFrame()
-        load_qss_stylesheet(title_bar)
+        title_bar.setStyleSheet("background-color: #f8f9fa; border-bottom: 1px solid #dee2e6; padding: 8px;")
 
         layout = QHBoxLayout(title_bar)
-        layout.setContentsMargins(Theme.PADDING_MD_INT, Theme.PADDING_SM_INT, Theme.PADDING_MD_INT, Theme.PADDING_SM_INT)
-        layout.setSpacing(Theme.PADDING_SM_INT)
+        layout.setContentsMargins(8, 4, 8, 4)
 
         # 标题
         title = QLabel("Merge Requests")
-        title.setStyleSheet(f"font-weight: 600; font-size: 14px; color: {Theme.TEXT_PRIMARY};")
+        title.setStyleSheet("font-weight: bold; font-size: 14px;")
         layout.addWidget(title)
 
         layout.addStretch()
 
         # 刷新按钮
         self.refresh_btn = QPushButton("刷新")
-        self.refresh_btn.setProperty("class", "text")
         self.refresh_btn.setMaximumWidth(60)
         self.refresh_btn.clicked.connect(self._on_refresh_clicked)
         layout.addWidget(self.refresh_btn)
@@ -91,28 +88,21 @@ class MRListWidget(QWidget):
     def _create_filter_bar(self) -> QFrame:
         """创建筛选栏"""
         filter_bar = QFrame()
-        filter_bar.setProperty("class", "toolbar")
+        filter_bar.setStyleSheet("background-color: #ffffff; padding: 4px; border-bottom: 1px solid #dee2e6;")
 
         layout = QHBoxLayout(filter_bar)
-        layout.setContentsMargins(Theme.PADDING_SM_INT, Theme.PADDING_XS_INT, Theme.PADDING_SM_INT, Theme.PADDING_XS_INT)
-        layout.setSpacing(Theme.PADDING_XS_INT)
+        layout.setContentsMargins(4, 2, 4, 2)
 
         # 搜索框
-        search_label = QLabel("搜索:")
-        search_label.setStyleSheet(f"color: {Theme.TEXT_SECONDARY}; font-size: 12px;")
-        layout.addWidget(search_label)
+        layout.addWidget(QLabel("搜索:"))
         self.search_input = QLineEdit()
-        self.search_input.setProperty("class", "input")
         self.search_input.setPlaceholderText("搜索标题、作者...")
         self.search_input.textChanged.connect(self._on_search_text_changed)
         layout.addWidget(self.search_input)
 
         # 状态筛选
-        state_label = QLabel("状态:")
-        state_label.setStyleSheet(f"color: {Theme.TEXT_SECONDARY}; font-size: 12px;")
-        layout.addWidget(state_label)
+        layout.addWidget(QLabel("状态:"))
         self.state_combo = QComboBox()
-        # state_combo will be styled by QSS automatically
         self.state_combo.addItems(["全部", "已打开", "已合并", "已关闭"])
         self.state_combo.currentTextChanged.connect(self._on_state_filter_changed)
         layout.addWidget(self.state_combo)
@@ -140,7 +130,23 @@ class MRListWidget(QWidget):
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
 
         # 设置样式
-        load_qss_stylesheet(tree)
+        tree.setStyleSheet("""
+            QTreeWidget {
+                border: none;
+                font-size: 11px;
+            }
+            QTreeWidget::item {
+                padding: 4px;
+                border-bottom: 1px solid #f1f3f5;
+            }
+            QTreeWidget::item:selected {
+                background-color: #e7f5ff;
+                color: #1971c2;
+            }
+            QTreeWidget::item:hover {
+                background-color: #f8f9fa;
+            }
+        """)
 
         return tree
 
@@ -262,12 +268,12 @@ class MRListWidget(QWidget):
     def _get_state_color(self, state: MRState) -> str:
         """获取状态颜色"""
         color_map = {
-            MRState.OPENED: Theme.PRIMARY,  # 蓝色
-            MRState.MERGED: Theme.SUCCESS,  # 绿色
-            MRState.CLOSED: Theme.TEXT_TERTIARY,  # 灰色
-            MRState.LOCKED: Theme.ERROR,  # 红色
+            MRState.OPENED: "#228be6",  # 蓝色
+            MRState.MERGED: "#40c057",  # 绿色
+            MRState.CLOSED: "#868e96",  # 灰色
+            MRState.LOCKED: "#fa5252",  # 红色
         }
-        return color_map.get(state, Theme.TEXT_PRIMARY)
+        return color_map.get(state, "#000000")
 
     def _on_selection_changed(self):
         """处理选择变化"""
