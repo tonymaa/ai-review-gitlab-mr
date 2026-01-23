@@ -108,7 +108,7 @@ class RelatedMRDialog(QDialog):
     def _create_mr_tree(self) -> QTreeWidget:
         """创建MR列表树"""
         tree = QTreeWidget()
-        tree.setHeaderLabels(["项目", "!MR", "标题", "作者", "评论", "状态", "更新时间"])
+        tree.setHeaderLabels(["项目", "!MR", "标题", "作者", "评论", "已批准", "状态", "更新时间"])
         tree.setAlternatingRowColors(True)
         tree.setRootIsDecorated(False)
         tree.setSortingEnabled(True)
@@ -126,6 +126,7 @@ class RelatedMRDialog(QDialog):
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents)
 
         return tree
 
@@ -239,18 +240,24 @@ class RelatedMRDialog(QDialog):
         state_color = self._get_state_color(mr.state)
 
         # 创建项目
+        approved_text = "✓" if mr.approved_by_current_user else ""
         item = QTreeWidgetItem([
             project.name if project else "未知",
             f"!{mr.iid}",
             mr.title,
             mr.author.name if mr.author else "未知",
             str(mr.user_notes_count),
+            approved_text,
             state_text,
             time_str,
         ])
 
         # 设置状态颜色
-        item.setForeground(5, QColor(state_color))
+        item.setForeground(6, QColor(state_color))
+
+        # 设置已批准颜色
+        if mr.approved_by_current_user:
+            item.setForeground(5, QColor(Theme.SUCCESS))
 
         # 存储MR和项目对象
         item.setData(0, Qt.ItemDataRole.UserRole, (mr, project))

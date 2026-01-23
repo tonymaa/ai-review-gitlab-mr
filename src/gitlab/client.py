@@ -220,6 +220,22 @@ class GitLabClient:
                     except GitlabError:
                         project_info = None
 
+                    # 获取 approval 状态
+                    try:
+                        mr_obj = self._client.projects.get(mr.project_id).mergerequests.get(mr.iid)
+                        approval = mr_obj.approvals.get()
+                        # approval 对象有 approved_by 属性，它是对象列表
+                        approved_by = approval.approved_by if hasattr(approval, 'approved_by') else []
+                        print(approved_by)
+                        # 检查当前用户是否已批准
+                        for approver in approved_by:
+                            user_dict = approver.asdict() if hasattr(approver, 'asdict') else approver
+                            if user_dict.get('user', {}).get('id') == current_user_id:
+                                mr_info.approved_by_current_user = True
+                                break
+                    except GitlabError as e:
+                        logger.debug(f"获取MR {mr.iid} 的approval状态失败: {e}")
+
                     result.append((mr_info, project_info))
 
                     # 缓存到数据库
@@ -229,7 +245,6 @@ class GitLabClient:
                 except (GitlabError, Exception) as e:
                     logger.warning(f"处理MR失败: {e}")
                     continue
-
             return result
 
         except GitlabError as e:
