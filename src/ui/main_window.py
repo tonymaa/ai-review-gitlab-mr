@@ -1150,6 +1150,25 @@ class MainWindow(QMainWindow):
 
         dialog.set_open_mr_callback(open_mr)
 
+        # 设置approve/unapprove回调函数
+        def approve_mr(mr: MergeRequestInfo, project: ProjectInfo):
+            """同意MR"""
+            success = self.gitlab_client.approve_merge_request(project.id, mr.iid)
+            if success:
+                self.status_bar.showMessage(f"已同意MR !{mr.iid}")
+            else:
+                QMessageBox.warning(self, "操作失败", f"无法同意MR !{mr.iid}")
+
+        def unapprove_mr(mr: MergeRequestInfo, project: ProjectInfo):
+            """取消同意MR"""
+            success = self.gitlab_client.unapprove_merge_request(project.id, mr.iid)
+            if success:
+                self.status_bar.showMessage(f"已取消同意MR !{mr.iid}")
+            else:
+                QMessageBox.warning(self, "操作失败", f"无法取消同意MR !{mr.iid}")
+
+        dialog.set_approve_callbacks(approve_mr, unapprove_mr)
+
         # 设置当前用户ID用于角色筛选
         current_user = self.gitlab_client.get_current_user()
         if current_user:

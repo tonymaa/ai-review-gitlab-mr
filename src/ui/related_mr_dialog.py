@@ -38,6 +38,13 @@ class RelatedMRDialog(QDialog):
         # MR打开回调函数
         self._open_mr_callback: Optional[Callable[[MergeRequestInfo, ProjectInfo], None]] = None
 
+        # MR approve/unapprove 回调函数
+        self._approve_callback: Optional[Callable[[MergeRequestInfo, ProjectInfo], None]] = None
+        self._unapprove_callback: Optional[Callable[[MergeRequestInfo, ProjectInfo], None]] = None
+
+        # 保存 GitLabClient 引用
+        self._gitlab_client = None
+
         self._setup_ui()
 
     def _setup_ui(self):
@@ -73,6 +80,12 @@ class RelatedMRDialog(QDialog):
         button_layout = QHBoxLayout()
         button_layout.setSpacing(Theme.PADDING_SM_INT)
         button_layout.addStretch()
+
+        self.approve_btn = QPushButton("同意")
+        self.approve_btn.setProperty("class", "success")
+        self.approve_btn.setEnabled(False)
+        self.approve_btn.clicked.connect(self._on_approve_clicked)
+        button_layout.addWidget(self.approve_btn)
 
         self.open_btn = QPushButton("打开")
         self.open_btn.setProperty("class", "primary")
@@ -145,6 +158,28 @@ class RelatedMRDialog(QDialog):
             callback: 接收MR和项目信息的回调函数，用于打开MR
         """
         self._open_mr_callback = callback
+
+    def set_approve_callbacks(
+        self,
+        approve_callback: Callable[[MergeRequestInfo, ProjectInfo], None],
+        unapprove_callback: Callable[[MergeRequestInfo, ProjectInfo], None],
+    ):
+        """设置approve/unapprove回调函数
+
+        Args:
+            approve_callback: 同意MR的回调函数
+            unapprove_callback: 取消同意MR的回调函数
+        """
+        self._approve_callback = approve_callback
+        self._unapprove_callback = unapprove_callback
+
+    def set_gitlab_client(self, client):
+        """设置GitLab客户端
+
+        Args:
+            client: GitLabClient实例
+        """
+        self._gitlab_client = client
 
     def load_merge_requests(self, mr_list):
         """
@@ -278,6 +313,58 @@ class RelatedMRDialog(QDialog):
         """处理选择变化"""
         has_selection = bool(self.mr_tree.selectedItems())
         self.open_btn.setEnabled(has_selection)
+        self.approve_btn.setEnabled(has_selection)
+
+        # 更新approve按钮文本
+        if has_selection:
+            item = self.mr_tree.selectedItems()[0]
+            mr, project = item.data(0, Qt.ItemDataRole.UserRole)
+            if mr.approved_by_current_user:
+                self.approve_btn.setText("取消同意")
+            else:
+                self.approve_btn.setText("同意")
+        else:
+            self.approve_btn.setText("同意")
+
+    def _on_approve_clicked(self):
+        """处理同意/取消同意按钮点击"""
+        selected_items = self.mr_tree.selectedItems()
+        if not selected_items:
+            return
+
+        item = selected_items[0]
+        mr, project = item.data(0, Qt.ItemDataRole.UserRole)
+
+        if mr.approved_by_current_user:
+            # 取消同意
+            if self._unapprove_callback:
+                self._unapprove_callback(mr, project)
+                # 更新本地状态
+                mr.approved_by_current_user = False
+                self._update_mr_item_display(item, mr)
+        else:
+            # 同意
+            if self._approve_callback:
+                self._approve_callback(mr, project)
+                # 更新本地状态
+                mr.approved_by_current_user = True
+                self._update_mr_item_display(item, mr)
+
+    def _update_mr_item_display(self, item: QTreeWidgetItem, mr: MergeRequestInfo):
+        """更新MR项的显示"""
+        # 更新已批准列
+        approved_text = "✓" if mr.approved_by_current_user else ""
+        item.setText(5, approved_text)
+        if mr.approved_by_current_user:
+            item.setForeground(5, QColor(Theme.SUCCESS))
+        else:
+            item.setForeground(5, QColor())
+
+        # 更新按钮文本
+        if mr.approved_by_current_user:
+            self.approve_btn.setText("取消同意")
+        else:
+            self.approve_btn.setText("同意")
 
     def _on_open_clicked(self):
         """处理打开按钮点击"""

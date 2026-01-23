@@ -542,6 +542,58 @@ class GitLabClient:
             logger.error(f"合并MR失败: {e}")
             return False
 
+    def approve_merge_request(
+        self,
+        project_id: str | int,
+        mr_iid: int,
+    ) -> bool:
+        """
+        批准Merge Request
+
+        Args:
+            project_id: 项目ID或路径
+            mr_iid: MR的IID
+
+        Returns:
+            是否成功
+        """
+        try:
+            project = self._client.projects.get(project_id)
+            mr = project.mergerequests.get(mr_iid)
+            mr.approve()
+            logger.info(f"成功批准MR {mr_iid}")
+            return True
+
+        except GitlabError as e:
+            logger.error(f"批准MR失败: {e}")
+            return False
+
+    def unapprove_merge_request(
+        self,
+        project_id: str | int,
+        mr_iid: int,
+    ) -> bool:
+        """
+        取消批准Merge Request
+
+        Args:
+            project_id: 项目ID或路径
+            mr_iid: MR的IID
+
+        Returns:
+            是否成功
+        """
+        try:
+            project = self._client.projects.get(project_id)
+            mr = project.mergerequests.get(mr_iid)
+            mr.unapprove()
+            logger.info(f"成功取消批准MR {mr_iid}")
+            return True
+
+        except GitlabError as e:
+            logger.error(f"取消批准MR失败: {e}")
+            return False
+
 
 def parse_project_identifier(identifier: str) -> tuple[str, str | int]:
     """
