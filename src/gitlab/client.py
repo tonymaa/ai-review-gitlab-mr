@@ -180,11 +180,12 @@ class GitLabClient:
 
             current_user_id = current_user.get("id")
 
-            # 1. 获取 assignee 为我的 MR (使用全局 API)
+            # 1. 获取 assignee 为我的 MR (使用全局 API，包含 approval 状态)
             assigned_mrs = self._client.mergerequests.list(
                 scope="assigned_to_me",
                 state=state,
                 all=True,
+                with_approval_status=True,  # 包含 approval 状态
             )
 
             # 合并结果（使用字典去重，key 为 (project_id, mr_iid)）
@@ -200,6 +201,7 @@ class GitLabClient:
                 reviewer_id=current_user_id,
                 state=state,
                 all=True,
+                with_approval_status=True,  # 包含 approval 状态
             )
 
             for mr in reviewer_mrs:
@@ -209,42 +211,74 @@ class GitLabClient:
 
             result = []
 
-            for mr in mr_dict.values():
+            import time
+            total_count = len(mr_dict)
+
+            # 项目缓存，避免重复获取同一个项目
+            project_cache = {}
+
+            for idx, mr in enumerate(mr_dict.values(), 1):
+                loop_start = time.time()
+
+                # 步骤1: 创建MR对象
+                step1_start = time.time()
                 try:
                     mr_info = MergeRequestInfo.from_dict(mr.asdict())
+                except (GitlabError, Exception) as e:
+                    logger.warning(f"创建MR对象失败 [{idx}/{total_count}] !{mr.iid}: {e}")
+                    continue
+                step1_time = time.time() - step1_start
 
-                    # 获取项目信息
+                # 步骤2: 获取项目信息（使用缓存）
+                step2_start = time.time()
+                if mr.project_id not in project_cache:
                     try:
                         project = self._client.projects.get(mr.project_id)
-                        project_info = ProjectInfo.from_dict(project.asdict())
+                        project_cache[mr.project_id] = project
                     except GitlabError:
-                        project_info = None
+                        project_cache[mr.project_id] = None
 
-                    # 获取 approval 状态
-                    try:
-                        mr_obj = self._client.projects.get(mr.project_id).mergerequests.get(mr.iid)
-                        approval = mr_obj.approvals.get()
-                        # approval 对象有 approved_by 属性，它是对象列表
-                        approved_by = approval.approved_by if hasattr(approval, 'approved_by') else []
-                        print(approved_by)
-                        # 检查当前用户是否已批准
-                        for approver in approved_by:
-                            user_dict = approver.asdict() if hasattr(approver, 'asdict') else approver
-                            if user_dict.get('user', {}).get('id') == current_user_id:
-                                mr_info.approved_by_current_user = True
-                                break
-                    except GitlabError as e:
-                        logger.debug(f"获取MR {mr.iid} 的approval状态失败: {e}")
+                project = project_cache.get(mr.project_id)
+                project_info = ProjectInfo.from_dict(project.asdict()) if project else None
+                step2_time = time.time() - step2_start
 
-                    result.append((mr_info, project_info))
+                # 步骤3: 从 MR 对象中提取 approval 状态（已在列表API中获取）
+                step3_start = time.time()
+                try:
+                    # 检查 MR 对象是否有 approval_state 属性
+                    if hasattr(mr, 'approval_state') and mr.approval_state:
+                        approval_state = mr.approval_state
+                        if hasattr(approval_state, 'asdict'):
+                            approval_data = approval_state.asdict()
+                            # 检查当前用户是否已批准
+                            approved_by = approval_data.get('approved_by', [])
+                            for approver in approved_by:
+                                user_dict = approver.get('user', {}) if isinstance(approver, dict) else {}
+                                if user_dict.get('id') == current_user_id:
+                                    mr_info.approved_by_current_user = True
+                                    break
+                except Exception as e:
+                    logger.debug(f"解析MR {mr.iid} 的approval状态失败: {e}")
+                step3_time = time.time() - step3_start
 
-                    # 缓存到数据库
-                    if self.db_manager:
-                        self.db_manager.save_merge_request(mr_info.to_database_dict())
+                result.append((mr_info, project_info))
 
-                except (GitlabError, Exception) as e:
-                    logger.warning(f"处理MR失败: {e}")
-                    continue
+                # 缓存到数据库
+                if self.db_manager:
+                    step4_start = time.time()
+                    self.db_manager.save_merge_request(mr_info.to_database_dict())
+                    step4_time = time.time() - step4_start
+                else:
+                    step4_time = 0
+
+                loop_time = time.time() - loop_start
+                logger.info(
+                    f"处理MR [{idx}/{total_count}] !{mr.iid} 总耗时: {loop_time:.2f}秒 | "
+                    f"创建对象: {step1_time:.3f}s, "
+                    f"获取项目: {step2_time:.3f}s, "
+                    f"获取审批: {step3_time:.3f}s, "
+                    f"数据库: {step4_time:.3f}s"
+                )
             return result
 
         except GitlabError as e:
