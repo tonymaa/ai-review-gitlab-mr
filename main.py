@@ -14,6 +14,8 @@ load_dotenv()
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import Qt
 
+import qdarktheme
+
 from src.core.config import settings
 from src.ui.main_window import MainWindow
 
@@ -49,6 +51,12 @@ def main():
     app.setApplicationName("GitLab AI Review")
     app.setApplicationVersion("0.1.0")
     app.setOrganizationName("GitLab AI Review")
+
+    # 应用 qdarktheme 主题（自动跟随系统，自定义 primary color）
+    qdarktheme.setup_theme(
+        theme="auto",
+        custom_colors={"primary": "#1677ff"}
+    )
 
     # 设置日志
     setup_logging()

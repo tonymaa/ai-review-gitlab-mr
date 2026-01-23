@@ -38,6 +38,7 @@ from .mr_list_widget import MRListWidget
 from .diff_viewer import DiffViewerPanel
 from .comment_panel import CommentPanel
 from .related_mr_dialog import RelatedMRDialog
+from .theme import Theme
 
 logger = logging.getLogger(__name__)
 
@@ -194,37 +195,68 @@ class ConfigDialog(QDialog):
     def _setup_ui(self):
         """设置UI"""
         layout = QFormLayout(self)
+        layout.setContentsMargins(Theme.PADDING_XL_INT, Theme.PADDING_XL_INT, Theme.PADDING_XL_INT, Theme.PADDING_XL_INT)
+        layout.setSpacing(Theme.PADDING_MD_INT)
+
+        # 标题
+        title = QLabel("配置")
+        layout.addRow(title)
+        layout.addRow(QLabel(""))  # 空行
+        layout.addRow(QLabel(""))  # 空行
+
+        # GitLab配置标题
+        gitlab_title = QLabel("GitLab 配置")
+        layout.addRow(gitlab_title)
 
         # GitLab配置
         self.gitlab_url_input = QLineEdit(settings.gitlab.url)
+        self.gitlab_url_input.setProperty("class", "input")
         layout.addRow("GitLab URL:", self.gitlab_url_input)
 
         self.gitlab_token_input = QLineEdit(settings.gitlab.token)
         self.gitlab_token_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.gitlab_token_input.setProperty("class", "input")
         layout.addRow("GitLab Token:", self.gitlab_token_input)
 
         self.project_id_input = QLineEdit(settings.gitlab.default_project_id or "")
+        self.project_id_input.setProperty("class", "input")
         layout.addRow("默认项目ID:", self.project_id_input)
+
+        layout.addRow(QLabel(""))  # 空行
+
+        # AI配置标题
+        ai_title = QLabel("AI 配置")
+        layout.addRow(ai_title)
 
         # AI配置
         ai_provider = settings.ai.provider
         self.ai_provider_input = QLineEdit(ai_provider)
+        self.ai_provider_input.setProperty("class", "input")
         layout.addRow("AI提供商:", self.ai_provider_input)
 
         if ai_provider == "openai":
             self.openai_key_input = QLineEdit(settings.ai.openai.api_key)
             self.openai_key_input.setEchoMode(QLineEdit.EchoMode.Password)
+            self.openai_key_input.setProperty("class", "input")
             layout.addRow("OpenAI API Key:", self.openai_key_input)
 
             self.openai_model_input = QLineEdit(settings.ai.openai.model)
+            self.openai_model_input.setProperty("class", "input")
             layout.addRow("OpenAI 模型:", self.openai_model_input)
+
+        layout.addRow(QLabel(""))  # 空行
+        layout.addRow(QLabel(""))  # 空行
 
         # 按钮
         buttons = QHBoxLayout()
+        buttons.setSpacing(Theme.PADDING_SM_INT)
         save_btn = QPushButton("保存")
+        save_btn.setProperty("class", "primary")
         save_btn.clicked.connect(self.accept)
         cancel_btn = QPushButton("取消")
+        cancel_btn.setProperty("class", "default")
         cancel_btn.clicked.connect(self.reject)
+        buttons.addStretch()
         buttons.addWidget(save_btn)
         buttons.addWidget(cancel_btn)
         layout.addRow(buttons)
@@ -258,21 +290,24 @@ class ProjectSelectDialog(QDialog):
     def _setup_ui(self):
         """设置UI"""
         layout = QVBoxLayout(self)
-        layout.setSpacing(12)
+        layout.setContentsMargins(Theme.PADDING_XL_INT, Theme.PADDING_XL_INT, Theme.PADDING_XL_INT, Theme.PADDING_XL_INT)
+        layout.setSpacing(Theme.PADDING_MD_INT)
 
         # 标题和说明
         title_label = QLabel("选择项目")
-        title_label.setStyleSheet("font-size: 16px; font-weight: bold;")
         layout.addWidget(title_label)
 
-        desc_label = QLabel("请从下拉列表中选择一个项目:")
+        desc_label = QLabel("请从下拉列表中选择一个项目")
         layout.addWidget(desc_label)
 
         # 搜索框
         search_layout = QHBoxLayout()
-        search_layout.addWidget(QLabel("搜索:"))
+        search_layout.setSpacing(Theme.PADDING_SM_INT)
+        search_label = QLabel("搜索:")
+        search_layout.addWidget(search_label)
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("输入项目名称或路径进行筛选...")
+        self.search_input.setProperty("class", "input")
         self.search_input.textChanged.connect(self._on_search_changed)
         search_layout.addWidget(self.search_input)
         layout.addLayout(search_layout)
@@ -286,18 +321,20 @@ class ProjectSelectDialog(QDialog):
         # 项目详情区域
         self.details_label = QLabel()
         self.details_label.setWordWrap(True)
-        self.details_label.setStyleSheet("color: #666; padding: 8px; background: #f5f5f5; border-radius: 4px;")
         layout.addWidget(self.details_label)
 
         layout.addStretch()
 
         # 按钮
         buttons = QHBoxLayout()
+        buttons.setSpacing(Theme.PADDING_SM_INT)
         buttons.addStretch()
         self.ok_btn = QPushButton("确定")
+        self.ok_btn.setProperty("class", "primary")
         self.ok_btn.clicked.connect(self.accept)
         self.ok_btn.setEnabled(False)
         cancel_btn = QPushButton("取消")
+        cancel_btn.setProperty("class", "default")
         cancel_btn.clicked.connect(self.reject)
         buttons.addWidget(self.ok_btn)
         buttons.addWidget(cancel_btn)
@@ -473,8 +510,6 @@ class MainWindow(QMainWindow):
         """设置UI"""
         self.setWindowTitle("GitLab AI Review")
         self.setMinimumSize(1200, 800)
-
-        # 应用配置中的窗口大小
         self.resize(settings.app.ui.window_width, settings.app.ui.window_height)
 
         # 创建菜单栏
@@ -586,7 +621,6 @@ class MainWindow(QMainWindow):
 
         # 项目显示
         self.project_label = QLabel()
-        self.project_label.setStyleSheet("padding: 4px; color: #495057;")
         toolbar.addWidget(self.project_label)
 
     def _create_central_widget(self) -> QWidget:
@@ -640,6 +674,7 @@ class MainWindow(QMainWindow):
     def _create_status_bar(self):
         """创建状态栏"""
         self.status_bar = QStatusBar()
+        self.status_bar.setProperty("class", "status-bar")
         self.setStatusBar(self.status_bar)
         self.status_bar.showMessage("就绪")
 

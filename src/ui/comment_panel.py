@@ -19,6 +19,7 @@ from PyQt6.QtCore import pyqtSignal, Qt, QSize
 from PyQt6.QtGui import QColor
 
 from ..gitlab.models import ReviewComment
+from .theme import Theme
 
 
 class CommentListItem(QWidget):
@@ -37,52 +38,33 @@ class CommentListItem(QWidget):
 
     def _setup_ui(self):
         """设置UI"""
-        self.setFixedHeight(70)
+        self.setFixedHeight(75)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 6, 12, 6)
-        layout.setSpacing(4)
+        layout.setContentsMargins(Theme.PADDING_MD_INT, Theme.PADDING_XS_INT, Theme.PADDING_MD_INT, Theme.PADDING_XS_INT)
+        layout.setSpacing(Theme.PADDING_XS_INT)
 
         # 顶部：文件路径、行号、类型标签
         header = QHBoxLayout()
-        header.setSpacing(6)
+        header.setSpacing(Theme.PADDING_XS_INT)
 
         # 文件路径标签
         file_label = QLabel(self._get_display_path())
-        file_label.setStyleSheet("color: #495057; font-size: 11px; font-weight: 600;")
         header.addWidget(file_label)
 
         # 行号标签
         if self.comment.line_number:
             line_label = QLabel(f":{self.comment.line_number}")
-            line_label.setStyleSheet("""
-                QLabel {
-                    background-color: #e7f5ff;
-                    color: #1971c2;
-                    padding: 2px 6px;
-                    border-radius: 3px;
-                    font-size: 10px;
-                    font-weight: 600;
-                }
-            """)
             header.addWidget(line_label)
 
         header.addStretch()
 
         # 评论类型标签
         type_text = "AI" if self.comment.comment_type == "ai_comment" else "手动"
-        type_color = "#7c4dff" if self.comment.comment_type == "ai_comment" else "#228be6"
+        type_color = Theme.COMMENT_AI_BADGE if self.comment.comment_type == "ai_comment" else Theme.COMMENT_USER_BADGE
         type_label = QLabel(type_text)
-        type_label.setStyleSheet(f"""
-            QLabel {{
-                background-color: {type_color};
-                color: white;
-                padding: 2px 6px;
-                border-radius: 3px;
-                font-size: 9px;
-                font-weight: 600;
-            }}
-        """)
+        # 使用属性来标识类型，pyqtdarktheme 会自动处理样式
+        type_label.setProperty("commentType", "ai" if self.comment.comment_type == "ai_comment" else "user")
         header.addWidget(type_label)
 
         layout.addLayout(header)
@@ -93,9 +75,8 @@ class CommentListItem(QWidget):
             content = content[:80] + "..."
 
         content_label = QLabel(content)
-        content_label.setStyleSheet("color: #212529; font-size: 12px;")
         content_label.setWordWrap(True)
-        content_label.setMaximumHeight(36)
+        content_label.setMaximumHeight(40)
         layout.addWidget(content_label)
 
     def _get_display_path(self) -> str:
@@ -107,12 +88,10 @@ class CommentListItem(QWidget):
 
     def enterEvent(self, event):
         """鼠标进入事件"""
-        self.setStyleSheet("background-color: #f8f9fa; border-radius: 4px;")
         super().enterEvent(event)
 
     def leaveEvent(self, event):
         """鼠标离开事件"""
-        self.setStyleSheet("")
         super().leaveEvent(event)
 
 
@@ -132,19 +111,19 @@ class CommentEditor(QWidget):
         """设置UI"""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(Theme.PADDING_SM_INT)
 
         # 标题
         self.title_label = QLabel("添加评论")
-        self.title_label.setStyleSheet("font-weight: bold; font-size: 14px; padding: 4px;")
         layout.addWidget(self.title_label)
 
         # 位置信息
         self.location_label = QLabel("位置: -")
-        self.location_label.setStyleSheet("color: #868e96; font-size: 11px; padding: 4px;")
         layout.addWidget(self.location_label)
 
         # 评论内容
-        layout.addWidget(QLabel("评论内容:"))
+        content_label = QLabel("评论内容:")
+        layout.addWidget(content_label)
         self.comment_text = QTextEdit()
         self.comment_text.setPlaceholderText("输入你的评论...")
         self.comment_text.setMaximumHeight(120)
@@ -152,12 +131,16 @@ class CommentEditor(QWidget):
 
         # 按钮
         buttons = QHBoxLayout()
+        buttons.setSpacing(Theme.PADDING_SM_INT)
         self.submit_btn = QPushButton("发布评论")
+        self.submit_btn.setProperty("class", "primary")
         self.submit_btn.clicked.connect(self._on_submit)
         self.cancel_btn = QPushButton("取消")
+        self.cancel_btn.setProperty("class", "default")
         self.cancel_btn.clicked.connect(self._on_cancel)
-        buttons.addWidget(self.submit_btn)
+        buttons.addStretch()
         buttons.addWidget(self.cancel_btn)
+        buttons.addWidget(self.submit_btn)
         layout.addLayout(buttons)
 
     def set_location(self, file_path: str, line_number: int, line_type: str):
@@ -204,28 +187,6 @@ class CommentListWidget(QListWidget):
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self.setStyleSheet("""
-            QListWidget {
-                border: 1px solid #dee2e6;
-                border-radius: 6px;
-                background-color: #ffffff;
-                outline: none;
-            }
-            QListWidget::item {
-                border: none;
-                border-bottom: 1px solid #f1f3f5;
-                padding: 10px 12px;
-                color: #212529;
-                background-color: #ffffff;
-            }
-            QListWidget::item:hover {
-                background-color: #f8f9fa;
-            }
-            QListWidget::item:selected {
-                background-color: #e7f5ff;
-                color: #212529;
-            }
-        """)
 
         # 启用右键菜单
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -386,6 +347,7 @@ class CommentPanel(QWidget):
 
         # 发布全部按钮
         publish_all_btn = QPushButton("发布全部评论到GitLab")
+        publish_all_btn.setProperty("class", "primary")
         publish_all_btn.clicked.connect(self._on_publish_all)
         comments_layout.addWidget(publish_all_btn)
 
@@ -396,14 +358,13 @@ class CommentPanel(QWidget):
         from PyQt6.QtWidgets import QFrame, QHBoxLayout
 
         title_bar = QFrame()
-        title_bar.setStyleSheet("background-color: #f8f9fa; border-bottom: 1px solid #dee2e6; padding: 8px;")
 
         layout = QHBoxLayout(title_bar)
-        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setContentsMargins(Theme.PADDING_MD_INT, Theme.PADDING_SM_INT, Theme.PADDING_MD_INT, Theme.PADDING_SM_INT)
+        layout.setSpacing(Theme.PADDING_SM_INT)
 
         # 标题
         title = QLabel("评论")
-        title.setStyleSheet("font-weight: bold; font-size: 14px;")
         layout.addWidget(title)
 
         layout.addStretch()
@@ -411,25 +372,6 @@ class CommentPanel(QWidget):
         # AI 评论按钮
         self.ai_review_btn = QPushButton("AI 评论")
         self.ai_review_btn.setMaximumWidth(80)
-        self.ai_review_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #7c4dff;
-                color: white;
-                border: none;
-                padding: 4px 12px;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #6200ea;
-            }
-            QPushButton:pressed {
-                background-color: #5200cc;
-            }
-            QPushButton:disabled {
-                background-color: #b0a0ff;
-            }
-        """)
         self.ai_review_btn.clicked.connect(self._on_ai_review)
         layout.addWidget(self.ai_review_btn)
 

@@ -19,6 +19,7 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QIcon
 
 from ..gitlab.models import MergeRequestInfo, MRState
+from .theme import Theme
 
 
 class MRListWidget(QWidget):
@@ -59,20 +60,19 @@ class MRListWidget(QWidget):
 
         # 状态栏
         self.status_label = QLabel()
-        self.status_label.setStyleSheet("padding: 4px; background-color: #f8f9fa; border-top: 1px solid #dee2e6;")
+        self.status_label.setProperty("class", "status-bar")
         layout.addWidget(self.status_label)
 
     def _create_title_bar(self) -> QFrame:
         """创建标题栏"""
         title_bar = QFrame()
-        title_bar.setStyleSheet("background-color: #f8f9fa; border-bottom: 1px solid #dee2e6; padding: 8px;")
 
         layout = QHBoxLayout(title_bar)
-        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setContentsMargins(Theme.PADDING_MD_INT, Theme.PADDING_SM_INT, Theme.PADDING_MD_INT, Theme.PADDING_SM_INT)
+        layout.setSpacing(Theme.PADDING_SM_INT)
 
         # 标题
         title = QLabel("Merge Requests")
-        title.setStyleSheet("font-weight: bold; font-size: 14px;")
         layout.addWidget(title)
 
         layout.addStretch()
@@ -88,20 +88,22 @@ class MRListWidget(QWidget):
     def _create_filter_bar(self) -> QFrame:
         """创建筛选栏"""
         filter_bar = QFrame()
-        filter_bar.setStyleSheet("background-color: #ffffff; padding: 4px; border-bottom: 1px solid #dee2e6;")
 
         layout = QHBoxLayout(filter_bar)
-        layout.setContentsMargins(4, 2, 4, 2)
+        layout.setContentsMargins(Theme.PADDING_SM_INT, Theme.PADDING_XS_INT, Theme.PADDING_SM_INT, Theme.PADDING_XS_INT)
+        layout.setSpacing(Theme.PADDING_XS_INT)
 
         # 搜索框
-        layout.addWidget(QLabel("搜索:"))
+        search_label = QLabel("搜索:")
+        layout.addWidget(search_label)
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("搜索标题、作者...")
         self.search_input.textChanged.connect(self._on_search_text_changed)
         layout.addWidget(self.search_input)
 
         # 状态筛选
-        layout.addWidget(QLabel("状态:"))
+        state_label = QLabel("状态:")
+        layout.addWidget(state_label)
         self.state_combo = QComboBox()
         self.state_combo.addItems(["全部", "已打开", "已合并", "已关闭"])
         self.state_combo.currentTextChanged.connect(self._on_state_filter_changed)
@@ -128,25 +130,6 @@ class MRListWidget(QWidget):
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
-
-        # 设置样式
-        tree.setStyleSheet("""
-            QTreeWidget {
-                border: none;
-                font-size: 11px;
-            }
-            QTreeWidget::item {
-                padding: 4px;
-                border-bottom: 1px solid #f1f3f5;
-            }
-            QTreeWidget::item:selected {
-                background-color: #e7f5ff;
-                color: #1971c2;
-            }
-            QTreeWidget::item:hover {
-                background-color: #f8f9fa;
-            }
-        """)
 
         return tree
 
@@ -268,12 +251,12 @@ class MRListWidget(QWidget):
     def _get_state_color(self, state: MRState) -> str:
         """获取状态颜色"""
         color_map = {
-            MRState.OPENED: "#228be6",  # 蓝色
-            MRState.MERGED: "#40c057",  # 绿色
-            MRState.CLOSED: "#868e96",  # 灰色
-            MRState.LOCKED: "#fa5252",  # 红色
+            MRState.OPENED: Theme.PRIMARY,  # 蓝色
+            MRState.MERGED: Theme.SUCCESS,  # 绿色
+            MRState.CLOSED: Theme.TEXT_TERTIARY,  # 灰色
+            MRState.LOCKED: Theme.ERROR,  # 红色
         }
-        return color_map.get(state, "#000000")
+        return color_map.get(state, Theme.TEXT_PRIMARY)
 
     def _on_selection_changed(self):
         """处理选择变化"""
