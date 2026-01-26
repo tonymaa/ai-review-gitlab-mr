@@ -245,18 +245,15 @@ class GitLabClient:
                 # 步骤3: 从 MR 对象中提取 approval 状态（已在列表API中获取）
                 step3_start = time.time()
                 try:
-                    # 检查 MR 对象是否有 approval_state 属性
-                    if hasattr(mr, 'approval_state') and mr.approval_state:
-                        approval_state = mr.approval_state
-                        if hasattr(approval_state, 'asdict'):
-                            approval_data = approval_state.asdict()
-                            # 检查当前用户是否已批准
-                            approved_by = approval_data.get('approved_by', [])
-                            for approver in approved_by:
-                                user_dict = approver.get('user', {}) if isinstance(approver, dict) else {}
-                                if user_dict.get('id') == current_user_id:
-                                    mr_info.approved_by_current_user = True
-                                    break
+                    if mr.detailed_merge_status == 'approvals_missing' and project:
+                        mr_obj = project.mergerequests.get(mr.iid)
+                        approval = mr_obj.approvals.get()
+                        approved_by = approval.approved_by if hasattr(approval, 'approved_by') else []
+                        for approver in approved_by:
+                            user_dict = approver.asdict() if hasattr(approver, 'asdict') else approver
+                            if user_dict.get('user', {}).get('id') == current_user_id:
+                                mr_info.approved_by_current_user = True
+                                break
                 except Exception as e:
                     logger.debug(f"解析MR {mr.iid} 的approval状态失败: {e}")
                 step3_time = time.time() - step3_start
