@@ -133,7 +133,7 @@ class MRDetailDialog(QDialog):
         self.current_user_id = current_user_id
 
         self.setWindowTitle(f"MR详情 - {mr.title}")
-        self.setMinimumSize(800, 700)
+        self.setMinimumSize(1000, 700)
 
         self.comments: List[Dict[str, Any]] = []
 
@@ -149,52 +149,39 @@ class MRDetailDialog(QDialog):
         layout.setSpacing(Theme.PADDING_MD_INT)
         layout.setContentsMargins(Theme.PADDING_XL_INT, Theme.PADDING_XL_INT, Theme.PADDING_XL_INT, Theme.PADDING_XL_INT)
 
+        # 主内容区域（使用卡片式设计）
+        main_content = QWidget()
+        main_layout = QVBoxLayout(main_content)
+        main_layout.setSpacing(Theme.PADDING_LG_INT)
+
+        # 标题卡片
+        title_card = self._create_title_card()
+        main_layout.addWidget(title_card)
+
+        # 信息卡片（分支、状态等）
+        info_card = self._create_info_card()
+        main_layout.addWidget(info_card)
+
+        # 用户卡片（Assignees & Reviewers）
+        users_card = self._create_users_card()
+        main_layout.addWidget(users_card)
+
+        # 描述卡片
+        desc_card = self._create_description_card()
+        main_layout.addWidget(desc_card)
+
+        # 评论卡片
+        comments_card = self._create_comments_card()
+        main_layout.addWidget(comments_card)
+
+        main_layout.addStretch()
+
         # 滚动区域
         scroll = QScrollArea()
+        scroll.setWidget(main_content)
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-
-        content_widget = QWidget()
-        content_layout = QVBoxLayout(content_widget)
-        content_layout.setSpacing(Theme.PADDING_MD_INT)
-
-        # 标题和状态
-        title_section = self._create_title_section()
-        content_layout.addWidget(title_section)
-
-        # 分隔线
-        separator1 = QFrame()
-        separator1.setFrameShape(QFrame.Shape.HLine)
-        separator1.setProperty("class", "separator")
-        content_layout.addWidget(separator1)
-
-        # 用户信息（assignee和reviewer）
-        users_section = self._create_users_section()
-        content_layout.addWidget(users_section)
-
-        # 分隔线
-        separator2 = QFrame()
-        separator2.setFrameShape(QFrame.Shape.HLine)
-        separator2.setProperty("class", "separator")
-        content_layout.addWidget(separator2)
-
-        # 描述内容
-        desc_section = self._create_description_section()
-        content_layout.addWidget(desc_section)
-
-        # 分隔线
-        separator3 = QFrame()
-        separator3.setFrameShape(QFrame.Shape.HLine)
-        separator3.setProperty("class", "separator")
-        content_layout.addWidget(separator3)
-
-        # 评论区域
-        comments_section = self._create_comments_section()
-        content_layout.addWidget(comments_section)
-
-        content_layout.addStretch()
-
-        scroll.setWidget(content_widget)
+        scroll.setProperty("class", "main-scroll")
         layout.addWidget(scroll)
 
         # 底部按钮栏
@@ -213,139 +200,245 @@ class MRDetailDialog(QDialog):
 
         layout.addLayout(button_layout)
 
-    def _create_title_section(self) -> QFrame:
-        """创建标题区域"""
+    def _create_title_card(self) -> QFrame:
+        """创建标题卡片"""
         frame = QFrame()
+        frame.setProperty("class", "card")
         layout = QVBoxLayout(frame)
         layout.setSpacing(Theme.PADDING_SM_INT)
+        layout.setContentsMargins(Theme.PADDING_LG_INT, Theme.PADDING_LG_INT, Theme.PADDING_LG_INT, Theme.PADDING_LG_INT)
 
         # 标题
         title_label = QLabel(f"<h2>{self.mr.title}</h2>")
         title_label.setWordWrap(True)
         layout.addWidget(title_label)
 
-        # 状态信息行
-        info_layout = QHBoxLayout()
-        info_layout.setSpacing(Theme.PADDING_MD_INT)
+        # MR IID 和状态标签
+        meta_layout = QHBoxLayout()
+        meta_layout.setSpacing(Theme.PADDING_MD_INT)
 
-        # 状态
+        # IID标签
+        iid_label = QLabel(f"!{self.mr.iid}")
+        iid_label.setProperty("class", "badge")
+        iid_label.setStyleSheet("background-color: #6c757d; color: white; padding: 2px 8px; border-radius: 4px;")
+        meta_layout.addWidget(iid_label)
+
+        # 状态标签
         state_text = self._get_state_text(self.mr.state)
         state_color = self._get_state_color(self.mr.state)
         state_label = QLabel(state_text)
-        state_label.setStyleSheet(f"color: {state_color}; font-weight: bold;")
-        info_layout.addWidget(state_label)
+        state_label.setStyleSheet(f"background-color: {state_color}; color: white; padding: 2px 8px; border-radius: 4px; font-weight: bold;")
+        meta_layout.addWidget(state_label)
 
-        # 分隔符
-        info_layout.addWidget(QLabel("•"))
+        # WIP标签
+        if self.mr.work_in_progress:
+            wip_label = QLabel("WIP")
+            wip_label.setStyleSheet("background-color: #ffc107; color: #212529; padding: 2px 8px; border-radius: 4px; font-weight: bold;")
+            meta_layout.addWidget(wip_label)
+
+        meta_layout.addStretch()
+
+        # 项目名称
+        if self.project:
+            project_label = QLabel(f"{self.project.name}")
+            project_label.setProperty("class", "text-secondary")
+            meta_layout.addWidget(project_label)
+
+        layout.addLayout(meta_layout)
+
+        return frame
+
+    def _create_info_card(self) -> QFrame:
+        """创建信息卡片"""
+        frame = QFrame()
+        frame.setProperty("class", "card")
+        layout = QVBoxLayout(frame)
+        layout.setSpacing(Theme.PADDING_SM_INT)
+        layout.setContentsMargins(Theme.PADDING_LG_INT, Theme.PADDING_LG_INT, Theme.PADDING_LG_INT, Theme.PADDING_LG_INT)
+
+        # 第一行：作者、时间
+        row1 = QHBoxLayout()
+        row1.setSpacing(Theme.PADDING_MD_INT)
 
         # 作者
         author_name = self.mr.author.name if self.mr.author else "未知"
-        info_layout.addWidget(QLabel(f"<b>{author_name}</b>"))
-        info_layout.addWidget(QLabel("requested to merge"))
+        row1.addWidget(QLabel("<b>作者:</b>"))
+        author_label = QLabel(author_name)
+        row1.addWidget(author_label)
 
-        # 源分支 -> 目标分支
-        source_text = f"<b>{self.mr.source_branch}</b>"
-        target_text = f"<b>{self.mr.target_branch}</b>"
-        info_layout.addWidget(QLabel(source_text))
-        info_layout.addWidget(QLabel("into"))
-        info_layout.addWidget(QLabel(target_text))
-
-        info_layout.addStretch()
+        row1.addWidget(QLabel("•"))
 
         # 更新时间
         if self.mr.updated_at:
             time_str = self._format_time(self.mr.updated_at)
-            info_layout.addWidget(QLabel(time_str))
+            row1.addWidget(QLabel("<b>更新:</b>"))
+            row1.addWidget(QLabel(time_str))
 
-        layout.addLayout(info_layout)
+        row1.addStretch()
+        layout.addLayout(row1)
+
+        # 第二行：分支信息
+        row2 = QHBoxLayout()
+        row2.setSpacing(Theme.PADDING_SM_INT)
+
+        row2.addWidget(QLabel("<b>分支:</b>"))
+
+        # 源分支
+        source_label = QLabel(self.mr.source_branch)
+        source_label.setProperty("class", "code")
+        source_label.setStyleSheet("background-color: #e9ecef; padding: 2px 6px; border-radius: 3px;")
+        row2.addWidget(source_label)
+
+        row2.addWidget(QLabel("→"))
+
+        # 目标分支
+        target_label = QLabel(self.mr.target_branch)
+        target_label.setProperty("class", "code")
+        target_label.setStyleSheet("background-color: #e9ecef; padding: 2px 6px; border-radius: 3px;")
+        row2.addWidget(target_label)
+
+        # 变更统计
+        if self.mr.additions > 0 or self.mr.deletions > 0:
+            stats_text = f"+{self.mr.additions} -{self.mr.deletions}"
+            stats_label = QLabel(stats_text)
+            stats_label.setStyleSheet("color: #6c757d;")
+            row2.addWidget(stats_label)
+
+        row2.addStretch()
+        layout.addLayout(row2)
+
+        # 第三行：标签（如果有）
+        if self.mr.labels:
+            row3 = QHBoxLayout()
+            row3.setSpacing(Theme.PADDING_SM_INT)
+            row3.addWidget(QLabel("<b>标签:</b>"))
+
+            for label in self.mr.labels:
+                tag_label = QLabel(label)
+                tag_label.setStyleSheet("background-color: #dee2e6; color: #495057; padding: 2px 8px; border-radius: 12px;")
+                row3.addWidget(tag_label)
+
+            row3.addStretch()
+            layout.addLayout(row3)
 
         return frame
 
-    def _create_users_section(self) -> QFrame:
-        """创建用户区域（assignee和reviewer）"""
+    def _create_users_card(self) -> QFrame:
+        """创建用户卡片"""
         frame = QFrame()
-        layout = QHBoxLayout(frame)
-        layout.setSpacing(Theme.PADDING_XL_INT)
+        frame.setProperty("class", "card")
+        layout = QVBoxLayout(frame)
+        layout.setSpacing(Theme.PADDING_MD_INT)
+        layout.setContentsMargins(Theme.PADDING_LG_INT, Theme.PADDING_LG_INT, Theme.PADDING_LG_INT, Theme.PADDING_LG_INT)
 
-        # Assignees
-        assignee_layout = QVBoxLayout()
-        assignee_label = QLabel("<b>Assignees:</b>")
-        assignee_layout.addWidget(assignee_label)
+        header = QLabel("<b>人员</b>")
+        layout.addWidget(header)
+
+        # 使用表格布局来显示用户
+        from PyQt6.QtWidgets import QGridLayout
+        grid = QGridLayout()
+        grid.setSpacing(Theme.PADDING_MD_INT)
+        grid.setColumnStretch(1, 1)
+
+        # Assignees 行
+        grid.addWidget(QLabel("<b>Assignees:</b>"), 0, 0)
+        assignee_widget = QWidget()
+        assignee_layout = QHBoxLayout(assignee_widget)
+        assignee_layout.setSpacing(Theme.PADDING_SM_INT)
+        assignee_layout.setContentsMargins(0, 0, 0, 0)
 
         if self.mr.assignees:
             for assignee in self.mr.assignees:
-                assignee_name = QLabel(f"• {assignee.name}")
-                assignee_layout.addWidget(assignee_name)
+                avatar = QLabel(f"@{assignee.username}")
+                avatar.setStyleSheet("color: #6c757d;")
+                assignee_layout.addWidget(avatar)
         else:
             assignee_layout.addWidget(QLabel("无"))
 
-        layout.addLayout(assignee_layout)
+        assignee_layout.addStretch()
+        grid.addWidget(assignee_widget, 0, 1)
 
-        # Reviewers
-        reviewer_layout = QVBoxLayout()
-        reviewer_label = QLabel("<b>Reviewers:</b>")
-        reviewer_layout.addWidget(reviewer_label)
+        # Reviewers 行
+        grid.addWidget(QLabel("<b>Reviewers:</b>"), 1, 0)
+        reviewer_widget = QWidget()
+        reviewer_layout = QHBoxLayout(reviewer_widget)
+        reviewer_layout.setSpacing(Theme.PADDING_SM_INT)
+        reviewer_layout.setContentsMargins(0, 0, 0, 0)
 
         if self.mr.reviewers:
             for reviewer in self.mr.reviewers:
-                reviewer_name = QLabel(f"• {reviewer.name}")
-                reviewer_layout.addWidget(reviewer_name)
+                avatar = QLabel(f"@{reviewer.username}")
+                avatar.setStyleSheet("color: #6c757d;")
+                reviewer_layout.addWidget(avatar)
         else:
             reviewer_layout.addWidget(QLabel("无"))
 
-        layout.addLayout(reviewer_layout)
+        reviewer_layout.addStretch()
+        grid.addWidget(reviewer_widget, 1, 1)
 
-        layout.addStretch()
+        layout.addLayout(grid)
 
         return frame
 
-    def _create_description_section(self) -> QFrame:
-        """创建描述区域"""
+    def _create_description_card(self) -> QFrame:
+        """创建描述卡片"""
         frame = QFrame()
+        frame.setProperty("class", "card")
         layout = QVBoxLayout(frame)
         layout.setSpacing(Theme.PADDING_SM_INT)
+        layout.setContentsMargins(Theme.PADDING_LG_INT, Theme.PADDING_LG_INT, Theme.PADDING_LG_INT, Theme.PADDING_LG_INT)
 
-        desc_label = QLabel("<b>描述:</b>")
-        layout.addWidget(desc_label)
+        header = QLabel("<b>描述</b>")
+        layout.addWidget(header)
 
-        desc_text = self.mr.description or "无描述"
-        desc_content = QLabel(desc_text)
-        desc_content.setWordWrap(True)
-        desc_content.setTextFormat(Qt.TextFormat.PlainText)
-        layout.addWidget(desc_content)
+        if self.mr.description:
+            desc_content = QLabel(self.mr.description)
+            desc_content.setWordWrap(True)
+            desc_content.setTextFormat(Qt.TextFormat.PlainText)
+            layout.addWidget(desc_content)
+        else:
+            layout.addWidget(QLabel("<i>无描述</i>"))
 
         return frame
 
-    def _create_comments_section(self) -> QFrame:
-        """创建评论区域"""
+    def _create_comments_card(self) -> QFrame:
+        """创建评论卡片"""
         frame = QFrame()
+        frame.setProperty("class", "card")
         layout = QVBoxLayout(frame)
         layout.setSpacing(Theme.PADDING_MD_INT)
+        layout.setContentsMargins(Theme.PADDING_LG_INT, Theme.PADDING_LG_INT, Theme.PADDING_LG_INT, Theme.PADDING_LG_INT)
 
-        # 标题和添加评论输入框
-        header_layout = QVBoxLayout()
-        header_layout.setSpacing(Theme.PADDING_SM_INT)
-
-        comments_label = QLabel(f"<b>动态 ({len(self.comments)})</b>")
-        header_layout.addWidget(comments_label)
+        # 标题
+        self.comments_count_label = QLabel(f"<b>动态 ({len(self.comments)})</b>")
+        layout.addWidget(self.comments_count_label)
 
         # 添加评论输入框
+        input_container = QFrame()
+        input_container.setProperty("class", "comment-input-container")
+        input_container.setStyleSheet("background-color: #f8f9fa; border-radius: 6px; padding: 8px;")
+        input_layout = QVBoxLayout(input_container)
+        input_layout.setSpacing(Theme.PADDING_SM_INT)
+        input_layout.setContentsMargins(0, 0, 0, 0)
+
         self.comment_input = QTextEdit()
         self.comment_input.setPlaceholderText("添加评论...")
         self.comment_input.setMaximumHeight(80)
-        header_layout.addWidget(self.comment_input)
+        self.comment_input.setStyleSheet("border: 1px solid #dee2e6; border-radius: 4px; padding: 8px;")
+        input_layout.addWidget(self.comment_input)
 
         add_comment_btn = QPushButton("添加评论")
         add_comment_btn.setProperty("class", "primary")
         add_comment_btn.clicked.connect(self._on_add_comment)
-        header_layout.addWidget(add_comment_btn)
+        input_layout.addWidget(add_comment_btn)
 
-        layout.addLayout(header_layout)
+        layout.addWidget(input_container)
 
         # 评论列表
         self.comments_container = QWidget()
         self.comments_layout = QVBoxLayout(self.comments_container)
         self.comments_layout.setSpacing(Theme.PADDING_SM_INT)
+        self.comments_layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.comments_container)
 
         return frame
@@ -386,6 +479,10 @@ class MRDetailDialog(QDialog):
 
     def _refresh_comments_display(self):
         """刷新评论显示"""
+        # 更新评论数量标签
+        if hasattr(self, 'comments_count_label'):
+            self.comments_count_label.setText(f"<b>动态 ({len(self.comments)})</b>")
+
         # 清空现有评论
         while self.comments_layout.count():
             child = self.comments_layout.takeAt(0)
@@ -397,9 +494,6 @@ class MRDetailDialog(QDialog):
             comment_widget = CommentItemWidget(comment, self.current_user_id)
             comment_widget.delete_requested.connect(self._on_delete_comment)
             self.comments_layout.addWidget(comment_widget)
-
-        # 更新评论数量标签
-        # 找到评论标签并更新
 
     def _on_add_comment(self):
         """添加评论"""
