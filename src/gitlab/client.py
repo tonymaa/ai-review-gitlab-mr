@@ -157,7 +157,7 @@ class GitLabClient:
 
     def list_all_merge_requests_related_to_me(
         self,
-        state: str = "closed",
+        state: str = "opened",
     ) -> List[tuple[MergeRequestInfo, ProjectInfo]]:
         """
         列出所有项目中与当前用户相关的Merge Requests（我是reviewer或assignee）
