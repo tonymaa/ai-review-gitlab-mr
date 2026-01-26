@@ -414,25 +414,18 @@ class MRDetailDialog(QDialog):
         layout.addWidget(self.comments_count_label)
 
         # 添加评论输入框
-        input_container = QFrame()
-        input_container.setProperty("class", "comment-input-container")
-        input_container.setStyleSheet("background-color: #f8f9fa; border-radius: 6px; padding: 8px;")
-        input_layout = QVBoxLayout(input_container)
-        input_layout.setSpacing(Theme.PADDING_SM_INT)
-        input_layout.setContentsMargins(0, 0, 0, 0)
 
         self.comment_input = QTextEdit()
         self.comment_input.setPlaceholderText("添加评论...")
         self.comment_input.setMaximumHeight(80)
         self.comment_input.setStyleSheet("border: 1px solid #dee2e6; border-radius: 4px; padding: 8px;")
-        input_layout.addWidget(self.comment_input)
+        layout.addWidget(self.comment_input)
 
         add_comment_btn = QPushButton("添加评论")
         add_comment_btn.setProperty("class", "primary")
         add_comment_btn.clicked.connect(self._on_add_comment)
-        input_layout.addWidget(add_comment_btn)
+        layout.addWidget(add_comment_btn)
 
-        layout.addWidget(input_container)
 
         # 评论列表
         self.comments_container = QWidget()
