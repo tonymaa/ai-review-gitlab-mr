@@ -44,6 +44,21 @@ class FileReview:
     summary: str = ""
 
 
+@dataclass
+class TokenUsage:
+    """Token使用统计"""
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+
+    def __add__(self, other: 'TokenUsage') -> 'TokenUsage':
+        return TokenUsage(
+            prompt_tokens=self.prompt_tokens + other.prompt_tokens,
+            completion_tokens=self.completion_tokens + other.completion_tokens,
+            total_tokens=self.total_tokens + other.total_tokens,
+        )
+
+
 class AIReviewer:
     """AI代码审查器基类"""
 
@@ -136,7 +151,7 @@ class OpenAIReviewer(AIReviewer):
         self,
         messages: List[Dict[str, str]],
         response_format: Optional[str] = None,
-    ) -> str:
+    ) -> tuple[str, TokenUsage]:
         """
         调用OpenAI API (使用流式输出，实时显示到控制台)
 
@@ -145,7 +160,7 @@ class OpenAIReviewer(AIReviewer):
             response_format: 响应格式 (json_object/text)
 
         Returns:
-            API响应文本
+            (API响应文本, Token使用统计)
         """
         kwargs = {
             "model": self.model,
@@ -160,6 +175,7 @@ class OpenAIReviewer(AIReviewer):
 
         try:
             full_content = []
+            usage = TokenUsage()
             print("\n\033[90m┌─ AI Response:\033[0m", end="", flush=True)
 
             stream = await self.client.chat.completions.create(**kwargs)
@@ -170,8 +186,22 @@ class OpenAIReviewer(AIReviewer):
                     # 实时输出到控制台（灰色，不干扰正常输出）
                     print(content, end="", flush=True)
 
+                # 捕获token使用情况（在最后一个chunk中）
+                if chunk.usage:
+                    usage.prompt_tokens = chunk.usage.prompt_tokens or 0
+                    usage.completion_tokens = chunk.usage.completion_tokens or 0
+                    usage.total_tokens = chunk.usage.total_tokens or 0
+
             print("\033[90m\n└─ End\033[0m\n")  # 结束标记
-            return "".join(full_content)
+
+            # 记录token使用情况
+            logger.info(
+                f"Token使用 - 输入: {usage.prompt_tokens}, "
+                f"输出: {usage.completion_tokens}, "
+                f"总计: {usage.total_tokens}"
+            )
+
+            return "".join(full_content), usage
         except Exception as e:
             logger.error(f"OpenAI API调用失败: {e}")
             raise
@@ -204,6 +234,7 @@ class OpenAIReviewer(AIReviewer):
             all_issues: List[str] = []
             all_warnings: List[str] = []
             all_suggestions: List[str] = []
+            total_usage = TokenUsage()
 
             # 逐个审查每个文件
             for diff_file in diff_files:
@@ -221,8 +252,9 @@ class OpenAIReviewer(AIReviewer):
                         {"role": "user", "content": prompt},
                     ]
 
-                    # 调用API
-                    response = await self._call_api(messages, response_format="json")
+                    # 调用API，获取响应和token使用量
+                    response, usage = await self._call_api(messages, response_format="json")
+                    total_usage += usage
 
                     # 解析结果
                     file_reviews = self._parse_detailed_file_review(response, diff_file.get_display_path())
@@ -261,6 +293,7 @@ class OpenAIReviewer(AIReviewer):
                 total_issues=len(all_issues),
                 total_warnings=len(all_warnings),
                 total_suggestions=len(all_suggestions),
+                total_usage=total_usage,
             )
 
             # 创建结果
@@ -451,6 +484,7 @@ Review ONLY lines starting with + or -. Output valid JSON with integer line_numb
         total_issues: int,
         total_warnings: int,
         total_suggestions: int,
+        total_usage: TokenUsage = None,
     ) -> str:
         """构建整体审查摘要"""
         summary_parts = [
@@ -465,6 +499,16 @@ Review ONLY lines starting with + or -. Output valid JSON with integer line_numb
             f"- Warnings: {total_warnings}",
             f"- Suggestions: {total_suggestions}",
         ]
+
+        # 添加token使用统计
+        if total_usage and total_usage.total_tokens > 0:
+            summary_parts.extend([
+                f"",
+                f"### Token Usage",
+                f"- Input tokens: {total_usage.prompt_tokens}",
+                f"- Output tokens: {total_usage.completion_tokens}",
+                f"- Total tokens: {total_usage.total_tokens}",
+            ])
 
         return "\n".join(summary_parts)
 
@@ -502,7 +546,11 @@ Review ONLY lines starting with + or -. Output valid JSON with integer line_numb
         try:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            response = loop.run_until_complete(self._call_api(messages, response_format="json"))
+            response, usage = loop.run_until_complete(self._call_api(messages, response_format="json"))
+            logger.info(
+                f"文件 {diff_file.get_display_path()} 审查完成 - "
+                f"Token: {usage.prompt_tokens}输入 + {usage.completion_tokens}输出 = {usage.total_tokens}总计"
+            )
             result = self._parse_file_review(response, diff_file)
             return result
         except Exception as e:

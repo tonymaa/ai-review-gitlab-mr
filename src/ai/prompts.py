@@ -17,16 +17,6 @@ When reviewing, pay attention to:
 - Error handling and edge cases
 - Code duplication and maintainability
 - Naming conventions and code style
-- Missing comments or documentation
-- Test coverage recommendations
-
-## Line Number Rules (MUST FOLLOW)
-The hunk header format is: @@ -<old_start>,<old_count> +<new_start>,<new_count> @@
-Each line may have a prefix:
-' ' indicates a context line (unchanged)
-'-' indicates a line deleted from the old file
-'+' indicates a line added to the new file
-I want to get the actual line numbers of each change (addition or deletion) in both the old file and the new file.
 
 
 Please provide feedback in a friendly, professional tone, focusing on areas that truly need improvement.
