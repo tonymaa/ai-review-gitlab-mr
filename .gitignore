@@ -49,3 +49,5 @@ config.yaml
 Thumbs.db
 
 .claude/
+
+nul

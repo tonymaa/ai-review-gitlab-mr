@@ -15,10 +15,15 @@ import type {
   Note,
   ReviewResponse,
   CommentRequest,
+  User,
 } from '../types';
+
+// Token 管理 key
+const TOKEN_STORAGE_KEY = 'gitlab-ai-review-token';
 
 class APIClient {
   private client: ReturnType<typeof axios.create>;
+  private token: string | null = null;
 
   constructor() {
     this.client = axios.create({
@@ -29,6 +34,24 @@ class APIClient {
       },
     });
 
+    // 从 localStorage 加载 token
+    this.loadToken();
+
+    // 请求拦截器 - 添加 token
+    this.client.interceptors.request.use(
+      (config) => {
+        if (this.token) {
+          config.headers.Authorization = `Bearer ${this.token}`;
+          console.log('[Request] Adding Authorization header, token length:', this.token.length);
+          console.log('[Request] URL:', config.url);
+        } else {
+          console.log('[Request] No token available for URL:', config.url);
+        }
+        return config;
+      },
+      (error) => Promise.reject(error)
+    );
+
     // 响应拦截器
     this.client.interceptors.response.use(
       (response) => response,
@@ -37,6 +60,79 @@ class APIClient {
         return Promise.reject(error);
       }
     );
+  }
+
+  // ==================== Token 管理 ====================
+
+  private loadToken() {
+    try {
+      const stored = localStorage.getItem(TOKEN_STORAGE_KEY);
+      console.log('[APIClient] Loading token from localStorage:', stored ? 'found' : 'not found');
+      if (stored) {
+        this.token = stored;
+        console.log('[APIClient] Token loaded successfully');
+      }
+    } catch (err) {
+      console.error('Failed to load token from localStorage:', err);
+    }
+  }
+
+  setToken(token: string | null) {
+    this.token = token;
+    try {
+      if (token) {
+        localStorage.setItem(TOKEN_STORAGE_KEY, token);
+        console.log('[APIClient] Token saved to localStorage');
+      } else {
+        localStorage.removeItem(TOKEN_STORAGE_KEY);
+        console.log('[APIClient] Token removed from localStorage');
+      }
+    } catch (err) {
+      console.error('Failed to save token to localStorage:', err);
+    }
+  }
+
+  getToken(): string | null {
+    return this.token;
+  }
+
+  clearToken() {
+    this.setToken(null);
+  }
+
+  // ==================== Auth ====================
+
+  async register(username: string, password: string): Promise<{ status: string; message: string; user: User; token: string }> {
+    const response = await this.client.post('/auth/register', { username, password });
+    const data = response.data;
+    // 自动登录，保存 token
+    this.setToken(data.token);
+    return data;
+  }
+
+  async login(username: string, password: string): Promise<{ status: string; message: string; user: User; token: string }> {
+    const response = await this.client.post('/auth/login', { username, password });
+    const data = response.data;
+    // 保存 token
+    this.setToken(data.token);
+    return data;
+  }
+
+  async logout(): Promise<{ status: string; message: string }> {
+    const response = await this.client.post('/auth/logout');
+    // 清除 token
+    this.clearToken();
+    return response.data;
+  }
+
+  async getCurrentUser(): Promise<User> {
+    const response = await this.client.get('/auth/me');
+    return response.data;
+  }
+
+  async verifyToken(): Promise<{ status: string; message: string; user: User }> {
+    const response = await this.client.post('/auth/verify-token');
+    return response.data;
   }
 
   // ==================== Health ====================

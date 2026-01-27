@@ -2,6 +2,22 @@
  * API 响应类型定义
  */
 
+/** 用户信息 */
+export interface User {
+  id: number;
+  username: string;
+  created_at: string;
+  is_active: boolean;
+}
+
+/** 认证响应 */
+export interface AuthResponse {
+  status: string;
+  message: string;
+  user: User;
+  token: string;
+}
+
 /** GitLab 配置 */
 export interface GitLabConfig {
   url: string;

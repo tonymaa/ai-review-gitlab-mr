@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.core.config import settings
 from src.core.database import DatabaseManager
-from server.api import gitlab, ai, config, health
+from server.api import gitlab, ai, config, health, auth
 from server.models.session import SessionManager
 
 
@@ -74,6 +74,7 @@ def create_app() -> FastAPI:
 
     # 注册路由
     app.include_router(health.router, prefix="/api", tags=["Health"])
+    app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
     app.include_router(config.router, prefix="/api/config", tags=["Config"])
     app.include_router(gitlab.router, prefix="/api/gitlab", tags=["GitLab"])
     app.include_router(ai.router, prefix="/api/ai", tags=["AI"])

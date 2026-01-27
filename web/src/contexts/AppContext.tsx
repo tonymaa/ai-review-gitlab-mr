@@ -3,13 +3,21 @@
  */
 
 import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
-import type { Project, MergeRequest, DiffFile, Note, ReviewComment } from '../types';
+import type { Project, MergeRequest, DiffFile, Note, ReviewComment, User } from '../types';
 import { api } from '../api/client';
 
 // LocalStorage key
 const PROJECTS_STORAGE_KEY = 'gitlab-ai-review-projects';
 
 interface AppContextType {
+  // 用户认证
+  isAuthenticated: boolean;
+  user: User | null;
+  login: (username: string, password: string) => Promise<void>;
+  register: (username: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
+  checkAuth: () => Promise<void>;
+
   // GitLab 连接状态
   isConnected: boolean;
   currentUser: { id: number; name: string; username: string; avatar_url?: string } | null;
@@ -54,6 +62,10 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  // 用户认证状态
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+
   const [isConnected, setIsConnected] = useState(false);
   const [currentUser, setCurrentUser] = useState<AppContextType['currentUser']>(null);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -95,6 +107,89 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     }
   }, [projects, loadedFromStorage]);
+
+  // 检查用户登录状态
+  useEffect(() => {
+    checkAuth();
+  }, []);
+
+  // 登录
+  const login = useCallback(async (username: string, password: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await api.login(username, password);
+      setIsAuthenticated(true);
+      setUser(result.user);
+      console.log('[login] Login successful, user:', result.user);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || err.message || '登录失败');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // 注册
+  const register = useCallback(async (username: string, password: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await api.register(username, password);
+      setIsAuthenticated(true);
+      setUser(result.user);
+      console.log('[register] Register successful, user:', result.user);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || err.message || '注册失败');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // 登出
+  const logout = useCallback(async () => {
+    try {
+      await api.logout();
+    } catch (err) {
+      console.error('Logout error:', err);
+    } finally {
+      setIsAuthenticated(false);
+      setUser(null);
+      // 清除其他状态
+      setIsConnected(false);
+      setCurrentUser(null);
+      setCurrentProject(null);
+      setCurrentMR(null);
+      setDiffFiles([]);
+      setCurrentDiffFile(null);
+    }
+  }, []);
+
+  // 检查认证状态
+  const checkAuth = useCallback(async () => {
+    const token = api.getToken();
+    console.log('[checkAuth] Token from api.getToken():', token ? 'exists' : 'null');
+    if (!token) {
+      setIsAuthenticated(false);
+      setUser(null);
+      return;
+    }
+
+    try {
+      console.log('[checkAuth] Calling getCurrentUser...');
+      const result = await api.getCurrentUser();
+      console.log('[checkAuth] getCurrentUser success:', result);
+      setIsAuthenticated(true);
+      setUser(result);
+    } catch (err) {
+      console.error('[checkAuth] Check auth failed:', err);
+      // Token 可能已过期，清除它
+      api.clearToken();
+      setIsAuthenticated(false);
+      setUser(null);
+    }
+  }, []);
 
   const connectGitLab = useCallback(async (url: string, token: string) => {
     setLoading(true);
@@ -140,26 +235,39 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, []);
 
   const value: AppContextType = {
+    // 用户认证
+    isAuthenticated,
+    user,
+    login,
+    register,
+    logout,
+    checkAuth,
+    // GitLab 连接
     isConnected,
     currentUser,
     connectGitLab,
+    // 项目
     projects,
     addProject,
     removeProject,
     currentProject,
     setCurrentProject: handleSetCurrentProject,
+    // MR
     mergeRequests,
     setMergeRequests,
     currentMR,
     setCurrentMR,
+    // Diff
     diffFiles,
     setDiffFiles,
     currentDiffFile,
     setCurrentDiffFile,
+    // 评论
     notes,
     setNotes,
     aiComments,
     setAiComments,
+    // 加载状态和错误
     loading,
     setLoading,
     error,

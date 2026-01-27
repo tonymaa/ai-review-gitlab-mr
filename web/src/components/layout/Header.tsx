@@ -30,7 +30,7 @@ interface HeaderProps {
 }
 
 const Header: FC<HeaderProps> = ({ onOpenConnect, onOpenConfig, onOpenRelatedMR }) => {
-  const { isConnected, currentUser, projects, addProject, removeProject, currentProject, setCurrentProject } = useApp()
+  const { isConnected, user, logout, projects, addProject, removeProject, currentProject, setCurrentProject } = useApp()
   const [projectModalOpen, setProjectModalOpen] = useState(false)
 
   const handleSelectProject = (project: Project) => {
@@ -85,9 +85,9 @@ const Header: FC<HeaderProps> = ({ onOpenConnect, onOpenConfig, onOpenRelatedMR 
       icon: <UserOutlined />,
       label: (
         <div>
-          <div>{currentUser?.name || '用户'}</div>
+          <div>{user?.username || '用户'}</div>
           <div style={{ fontSize: 12, opacity: 0.7 }}>
-            @{currentUser?.username || 'user'}
+            已登录
           </div>
         </div>
       ),
@@ -96,11 +96,11 @@ const Header: FC<HeaderProps> = ({ onOpenConnect, onOpenConfig, onOpenRelatedMR 
       type: 'divider' as const,
     },
     {
-      key: 'disconnect',
+      key: 'logout',
       icon: <LogoutOutlined />,
-      label: '断开连接',
-      onClick: () => {
-        window.location.reload()
+      label: '退出登录',
+      onClick: async () => {
+        await logout()
       },
     },
   ]
@@ -173,7 +173,6 @@ const Header: FC<HeaderProps> = ({ onOpenConnect, onOpenConfig, onOpenRelatedMR 
               <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
                 <Avatar
                   size="small"
-                  src={currentUser?.avatar_url}
                   icon={<UserOutlined />}
                   style={{ cursor: 'pointer' }}
                 />

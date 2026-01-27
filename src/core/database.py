@@ -19,6 +19,10 @@ from sqlalchemy import (
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship, Session
 from contextlib import contextmanager
+from passlib.context import CryptContext
+
+# 密码哈希上下文
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 Base = declarative_base()
 
@@ -26,6 +30,36 @@ Base = declarative_base()
 def now_utc():
     """获取当前UTC时间"""
     return datetime.now(timezone.utc)
+
+
+def hash_password(password: str) -> str:
+    """哈希密码"""
+    return pwd_context.hash(password)
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """验证密码"""
+    return pwd_context.verify(plain_password, hashed_password)
+
+
+class User(Base):
+    """用户数据模型"""
+
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(String(50), unique=True, nullable=False, index=True)
+    hashed_password = Column(String(255), nullable=False)
+    created_at = Column(DateTime, default=now_utc)
+    is_active = Column(Boolean, default=True)
+
+    def set_password(self, password: str):
+        """设置密码（哈希存储）"""
+        self.hashed_password = hash_password(password)
+
+    def verify_password(self, password: str) -> bool:
+        """验证密码"""
+        return verify_password(password, self.hashed_password)
 
 
 class MergeRequest(Base):
@@ -374,3 +408,75 @@ class DatabaseManager:
                 .delete()
             )
             return deleted
+
+    # User 相关操作
+    def create_user(self, username: str, password: str) -> dict:
+        """创建新用户，返回用户数据字典"""
+        with self.get_session() as session:
+            # 检查用户名是否已存在
+            existing = (
+                session.query(User)
+                .filter(User.username == username)
+                .first()
+            )
+            if existing:
+                raise ValueError(f"用户名 '{username}' 已存在")
+
+            # 创建新用户
+            user = User(username=username)
+            user.set_password(password)
+            session.add(user)
+            session.flush()
+
+            # 获取用户ID后重新查询，确保返回的对象是新的且包含所有字段
+            user_id = user.id
+
+        # 在会话外重新查询用户数据，避免返回已分离的对象
+        return self.get_user_data(user_id)
+
+    def get_user_by_username(self, username: str) -> Optional[User]:
+        """根据用户名获取用户"""
+        with self.get_session() as session:
+            return (
+                session.query(User)
+                .filter(User.username == username)
+                .first()
+            )
+
+    def get_user_by_id(self, user_id: int) -> Optional[User]:
+        """根据ID获取用户"""
+        with self.get_session() as session:
+            return session.query(User).filter(User.id == user_id).first()
+
+    def verify_user(self, username: str, password: str) -> Optional[dict]:
+        """验证用户凭据，返回用户数据"""
+        with self.get_session() as session:
+            user = session.query(User).filter(User.username == username).first()
+            if user and user.verify_password(password):
+                # 在会话内访问所有需要的属性
+                return {
+                    "id": user.id,
+                    "username": user.username,
+                    "created_at": user.created_at.isoformat() if user.created_at else None,
+                    "is_active": user.is_active,
+                }
+        return None
+
+    def list_users(self, limit: int = 100) -> List[User]:
+        """列出所有用户"""
+        with self.get_session() as session:
+            return session.query(User).order_by(User.created_at.desc()).limit(limit).all()
+
+    def get_user_data(self, user_id: int) -> Optional[dict]:
+        """获取用户数据（字典格式）"""
+        with self.get_session() as session:
+            user = session.query(User).filter(User.id == user_id).first()
+            if user is None:
+                return None
+            # 访问所有需要的属性，确保在会话内加载
+            return {
+                "id": user.id,
+                "username": user.username,
+                "created_at": user.created_at.isoformat() if user.created_at else None,
+                "is_active": user.is_active,
+            }
