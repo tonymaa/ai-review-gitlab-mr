@@ -308,9 +308,13 @@ class OpenAIReviewer(AIReviewer):
                             else:
                                 all_suggestions.append(full_desc)
 
+                except (AIAuthError, AIQuotaError, AIModelNotFoundError, AIConnectionError) as e:
+                    # 这些是致命错误，应该立即停止审查
+                    logger.error(f"AI 服务错误，停止审查: {e}")
+                    raise
                 except Exception as e:
+                    # 其他错误只记录日志，继续审查下一个文件
                     logger.error(f"审查文件 {diff_file.get_display_path()} 失败: {e}")
-                    # 继续审查下一个文件
                     continue
 
             # 构建整体摘要
@@ -589,7 +593,12 @@ Review ONLY lines starting with + or -. Output valid JSON with integer line_numb
             )
             result = self._parse_file_review(response, diff_file)
             return result
+        except (AIAuthError, AIQuotaError, AIModelNotFoundError, AIConnectionError) as e:
+            # 这些是致命错误，应该抛出
+            logger.error(f"AI 服务错误: {e}")
+            raise
         except Exception as e:
+            # 其他错误返回空结果
             logger.error(f"文件审查失败: {e}")
             return FileReview(file_path=diff_file.get_display_path())
         finally:
@@ -751,8 +760,14 @@ class OllamaReviewer(AIReviewer):
             print("\033[90m\n└─ End\033[0m\n")
             return "".join(full_content)
         except Exception as e:
-            logger.error(f"Ollama API调用失败: {e}")
-            raise
+            error_str = str(e).lower()
+            error_msg = str(e)
+
+            # 根据错误类型抛出相应的异常
+            if "connection" in error_str or "timeout" in error_str:
+                raise AIConnectionError("连接Ollama服务失败", f"请检查Ollama服务是否运行。URL: {self.base_url}")
+            else:
+                raise AIException("Ollama API调用失败", error_msg)
 
     def review_merge_request(
         self,
