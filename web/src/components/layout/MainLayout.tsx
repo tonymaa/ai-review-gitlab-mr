@@ -160,7 +160,7 @@ const MainLayout: FC = () => {
   }, [currentDiffFile])
 
   return (
-    <Layout style={{ height: 'calc(100vh - 48px)', background: '#000' }}>
+    <Layout style={{ height: 'calc(100vh - 48px)', background: '#000', width: '100vw' }}>
       {/* 左侧：MR 列表 */}
       <Sider
         width={320}
@@ -176,7 +176,7 @@ const MainLayout: FC = () => {
       </Sider>
 
       {/* 中间：Diff 查看器 */}
-      <Content style={{ flex: 1, display: 'flex', overflow: 'hidden', background: '#141414' }}>
+      <Content style={{ flex: 1, display: 'flex', overflow: 'hidden', background: '#141414', width: '100%' }}>
         <DiffViewer
           diffFile={currentDiffFile}
           diffLines={diffLines}

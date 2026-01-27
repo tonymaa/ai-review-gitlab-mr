@@ -174,7 +174,7 @@ def _run_review(task_id: str, client: GitLabClient, project_id: str, mr_iid: int
         diff_files = client.get_merge_request_diffs(project_id, mr_iid)
 
         # 创建审查器
-        reviewer = create_reviewer(config["provider"], **config)
+        reviewer = create_reviewer(**config)
 
         # 执行审查
         result = reviewer.review_merge_request(
@@ -299,7 +299,7 @@ async def review_single_file(request: FileReviewRequest):
 
         # 创建审查器
         config = _build_review_config(provider)
-        reviewer = create_reviewer(provider, **config)
+        reviewer = create_reviewer(**config)
 
         # 执行审查
         result = reviewer.review_merge_request(
