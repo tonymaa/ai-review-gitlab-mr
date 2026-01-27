@@ -123,6 +123,11 @@ const MainLayout: FC = () => {
   useEffect(() => {
     if (currentMR && currentProject) {
       const loadDiffs = async () => {
+        // 先清除旧数据
+        setCurrentDiffFile(null)
+        setDiffFiles([])
+        setDiffLines([])
+
         setLoading(true)
         try {
           console.log('Loading diffs for MR:', currentMR.iid, 'project:', currentProject.id)
@@ -147,8 +152,13 @@ const MainLayout: FC = () => {
         }
       }
       loadDiffs()
+    } else {
+      // MR 或 Project 为空时，清除所有数据
+      setCurrentDiffFile(null)
+      setDiffFiles([])
+      setDiffLines([])
     }
-  }, [currentMR, currentProject, setDiffFiles, setCurrentDiffFile, setLoading])
+  }, [currentMR, currentProject, setDiffFiles, setCurrentDiffFile, setLoading, setDiffLines])
 
   // 当选择文件时解析 diff
   useEffect(() => {

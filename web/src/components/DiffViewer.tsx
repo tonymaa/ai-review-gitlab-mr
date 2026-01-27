@@ -200,7 +200,8 @@ const DiffViewer: FC<DiffViewerProps> = ({
             style={{ marginTop: 60 }}
           />
         ) : (
-          <>
+          // Use key to force re-render when file changes
+          <div key={diffFile.new_path}>
             {/* 文件头部信息 */}
             <div style={{
               padding: '8px 16px',
@@ -232,7 +233,7 @@ const DiffViewer: FC<DiffViewerProps> = ({
             <div>
               {diffLines.map((line, index) => renderLine(line, index))}
             </div>
-          </>
+          </div>
         )}
       </div>
     </div>
