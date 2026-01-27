@@ -61,6 +61,9 @@ const AuthModal: FC<AuthModalProps> = ({ open, onClose }) => {
       title={null}
       width={400}
       centered
+      maskClosable={false}
+      closable={false}
+      keyboard={false}
     >
       <Tabs
         defaultActiveKey="login"
