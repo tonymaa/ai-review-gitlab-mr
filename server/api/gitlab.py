@@ -6,9 +6,10 @@
 import logging
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
 # 添加项目根目录到 Python 路径
@@ -16,31 +17,76 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.gitlab.client import GitLabClient
 from src.gitlab.models import MergeRequestInfo, DiffFile, ProjectInfo
-from src.core.config import settings
+from src.core.database import DatabaseManager
+from src.core.auth import verify_token
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# 全局 GitLab 客户端 (实际应该使用 SessionManager 管理)
-_gitlab_client: Optional[GitLabClient] = None
+# HTTP Bearer 认证
+security = HTTPBearer()
 
 
-def get_gitlab_client() -> Optional[GitLabClient]:
-    """获取 GitLab 客户端实例，如果不存在则从配置创建"""
-    global _gitlab_client
+# ==================== 依赖注入 ====================
 
-    # 如果客户端不存在但配置中有 GitLab URL 和 token，则自动重新创建
-    if _gitlab_client is None and settings.gitlab.url and settings.gitlab.token:
-        try:
-            logger.info("自动重新创建 GitLab 客户端")
-            _gitlab_client = GitLabClient(
-                url=settings.gitlab.url,
-                token=settings.gitlab.token,
-            )
-        except Exception as e:
-            logger.error(f"自动创建 GitLab 客户端失败: {e}")
+def get_db() -> DatabaseManager:
+    """获取数据库管理器"""
+    from server.main import app
+    db: DatabaseManager = app.state.db
+    return db
 
-    return _gitlab_client
+
+def get_current_user_id(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: DatabaseManager = Depends(get_db),
+) -> int:
+    """从 token 获取当前用户 ID"""
+    token = credentials.credentials
+    payload = verify_token(token)
+    if payload is None:
+        raise HTTPException(
+            status_code=401,
+            detail="无效的认证凭据",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    user_id_str = payload.get("sub")
+    if user_id_str is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Token 中没有用户信息",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    try:
+        return int(user_id_str)
+    except (ValueError, TypeError):
+        raise HTTPException(
+            status_code=401,
+            detail="Token 中的用户 ID 格式无效",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
+def get_gitlab_client(
+    user_id: int = Depends(get_current_user_id),
+    db: DatabaseManager = Depends(get_db),
+) -> GitLabClient:
+    """
+    获取当前用户的 GitLab 客户端
+    从数据库读取用户的配置并创建客户端
+    """
+    config = db.get_gitlab_config(user_id)
+    if not config:
+        raise HTTPException(
+            status_code=400,
+            detail="请先连接到 GitLab",
+        )
+
+    return GitLabClient(
+        url=config["url"],
+        token=config["token"],
+    )
 
 
 # ==================== Request/Response 模型 ====================
@@ -189,23 +235,29 @@ class CommentRequest(BaseModel):
 # ==================== API 端点 ====================
 
 @router.post("/connect", response_model=ConnectResponse)
-async def connect_gitlab(request: ConnectRequest):
+async def connect_gitlab(
+    request: ConnectRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: DatabaseManager = Depends(get_db),
+):
     """连接到 GitLab"""
-    global _gitlab_client
-
     try:
-        # 创建客户端
-        _gitlab_client = GitLabClient(
+        # 创建临时客户端验证连接
+        temp_client = GitLabClient(
             url=request.url,
             token=request.token,
         )
 
-        # 获取当前用户信息
-        user = _gitlab_client.get_current_user()
+        # 获取当前用户信息验证连接
+        user = temp_client.get_current_user()
 
-        # 更新配置
-        settings.gitlab.url = request.url
-        settings.gitlab.token = request.token
+        # 保存配置到数据库
+        db.upsert_gitlab_config(
+            user_id=user_id,
+            url=request.url,
+            token=request.token,
+        )
+        logger.info(f"用户 {user_id} 的 GitLab 配置已保存")
 
         return ConnectResponse(
             status="ok",
@@ -227,9 +279,6 @@ async def list_projects(
     client: GitLabClient = Depends(get_gitlab_client),
 ):
     """列出项目"""
-    if not client:
-        raise HTTPException(status_code=401, detail="未连接到 GitLab")
-
     try:
         projects = client.list_projects(
             membership=membership,
@@ -249,9 +298,6 @@ async def get_project(
     client: GitLabClient = Depends(get_gitlab_client),
 ):
     """获取项目详情"""
-    if not client:
-        raise HTTPException(status_code=401, detail="未连接到 GitLab")
-
     try:
         project = client.get_project(project_id)
         if not project:
@@ -272,9 +318,6 @@ async def list_merge_requests(
     client: GitLabClient = Depends(get_gitlab_client),
 ):
     """列出项目的 Merge Requests"""
-    if not client:
-        raise HTTPException(status_code=401, detail="未连接到 GitLab")
-
     try:
         mrs = client.list_merge_requests(
             project_id=project_id,
@@ -293,9 +336,6 @@ async def list_related_merge_requests(
     client: GitLabClient = Depends(get_gitlab_client),
 ):
     """列出与当前用户相关的所有 Merge Requests"""
-    if not client:
-        raise HTTPException(status_code=401, detail="未连接到 GitLab")
-
     try:
         result = client.list_all_merge_requests_related_to_me(state=state)
         return [
@@ -319,9 +359,6 @@ async def get_merge_request(
     client: GitLabClient = Depends(get_gitlab_client),
 ):
     """获取 Merge Request 详情"""
-    if not client:
-        raise HTTPException(status_code=401, detail="未连接到 GitLab")
-
     try:
         mr = client.get_merge_request(
             project_id=project_id,
@@ -346,9 +383,6 @@ async def get_merge_request_diffs(
     client: GitLabClient = Depends(get_gitlab_client),
 ):
     """获取 Merge Request 的 Diff 文件列表"""
-    if not client:
-        raise HTTPException(status_code=401, detail="未连接到 GitLab")
-
     try:
         diffs = client.get_merge_request_diffs(
             project_id=project_id,
@@ -368,9 +402,6 @@ async def get_merge_request_notes(
     client: GitLabClient = Depends(get_gitlab_client),
 ):
     """获取 Merge Request 的评论列表"""
-    if not client:
-        raise HTTPException(status_code=401, detail="未连接到 GitLab")
-
     try:
         notes = client.get_merge_request_notes(
             project_id=project_id,
@@ -403,9 +434,6 @@ async def create_merge_request_note(
     client: GitLabClient = Depends(get_gitlab_client),
 ):
     """创建 Merge Request 评论"""
-    if not client:
-        raise HTTPException(status_code=401, detail="未连接到 GitLab")
-
     try:
         # 如果指定了文件和行号，创建行评论
         if request.file_path and request.line_number:
@@ -445,9 +473,6 @@ async def delete_merge_request_note(
     client: GitLabClient = Depends(get_gitlab_client),
 ):
     """删除 Merge Request 评论"""
-    if not client:
-        raise HTTPException(status_code=401, detail="未连接到 GitLab")
-
     try:
         success = client.delete_merge_request_note(
             project_id=project_id,
@@ -474,9 +499,6 @@ async def approve_merge_request(
     client: GitLabClient = Depends(get_gitlab_client),
 ):
     """批准 Merge Request"""
-    if not client:
-        raise HTTPException(status_code=401, detail="未连接到 GitLab")
-
     try:
         success = client.approve_merge_request(
             project_id=project_id,
@@ -502,9 +524,6 @@ async def unapprove_merge_request(
     client: GitLabClient = Depends(get_gitlab_client),
 ):
     """取消批准 Merge Request"""
-    if not client:
-        raise HTTPException(status_code=401, detail="未连接到 GitLab")
-
     try:
         success = client.unapprove_merge_request(
             project_id=project_id,

@@ -53,6 +53,10 @@ class User(Base):
     created_at = Column(DateTime, default=now_utc)
     is_active = Column(Boolean, default=True)
 
+    # 关联关系
+    gitlab_config = relationship("GitLabConfig", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    ai_config = relationship("AIConfig", back_populates="user", uselist=False, cascade="all, delete-orphan")
+
     def set_password(self, password: str):
         """设置密码（哈希存储）"""
         self.hashed_password = hash_password(password)
@@ -60,6 +64,53 @@ class User(Base):
     def verify_password(self, password: str) -> bool:
         """验证密码"""
         return verify_password(password, self.hashed_password)
+
+
+class GitLabConfig(Base):
+    """GitLab 配置模型"""
+
+    __tablename__ = "gitlab_configs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True, index=True)
+    url = Column(String(500), nullable=False)
+    token = Column(String(500), nullable=False)
+    default_project_id = Column(String(200), nullable=True)
+    created_at = Column(DateTime, default=now_utc)
+    updated_at = Column(DateTime, default=now_utc, onupdate=now_utc)
+
+    # 关联关系
+    user = relationship("User", back_populates="gitlab_config")
+
+
+class AIConfig(Base):
+    """AI 配置模型"""
+
+    __tablename__ = "ai_configs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True, index=True)
+    provider = Column(String(50), nullable=False, default="openai")
+
+    # OpenAI 配置
+    openai_api_key = Column(String(500), nullable=True)
+    openai_base_url = Column(String(500), nullable=True)
+    openai_model = Column(String(100), nullable=False, default="gpt-4")
+    openai_temperature = Column(Integer, nullable=False, default=30)  # 存储为整数 * 100
+    openai_max_tokens = Column(Integer, nullable=False, default=2000)
+
+    # Ollama 配置
+    ollama_base_url = Column(String(500), nullable=False, default="http://localhost:11434")
+    ollama_model = Column(String(100), nullable=False, default="codellama")
+
+    # 审查规则 (JSON 格式存储)
+    review_rules = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=now_utc)
+    updated_at = Column(DateTime, default=now_utc, onupdate=now_utc)
+
+    # 关联关系
+    user = relationship("User", back_populates="ai_config")
 
 
 class MergeRequest(Base):
@@ -480,3 +531,184 @@ class DatabaseManager:
                 "created_at": user.created_at.isoformat() if user.created_at else None,
                 "is_active": user.is_active,
             }
+
+    # ==================== GitLab 配置相关操作 ====================
+
+    def upsert_gitlab_config(
+        self,
+        user_id: int,
+        url: str,
+        token: str,
+        default_project_id: Optional[str] = None,
+    ) -> GitLabConfig:
+        """创建或更新 GitLab 配置"""
+        with self.get_session() as session:
+            # 查找是否已存在
+            existing = (
+                session.query(GitLabConfig)
+                .filter(GitLabConfig.user_id == user_id)
+                .first()
+            )
+
+            if existing:
+                # 更新现有配置
+                existing.url = url
+                existing.token = token
+                existing.default_project_id = default_project_id
+                existing.updated_at = now_utc()
+                session.merge(existing)
+                session.flush()
+                session.refresh(existing)
+                return existing
+            else:
+                # 创建新配置
+                config = GitLabConfig(
+                    user_id=user_id,
+                    url=url,
+                    token=token,
+                    default_project_id=default_project_id,
+                )
+                session.add(config)
+                session.flush()
+                session.refresh(config)
+                return config
+
+    def get_gitlab_config(self, user_id: int) -> Optional[dict]:
+        """获取用户的 GitLab 配置（字典格式）"""
+        with self.get_session() as session:
+            config = (
+                session.query(GitLabConfig)
+                .filter(GitLabConfig.user_id == user_id)
+                .first()
+            )
+            if config is None:
+                return None
+            return {
+                "id": config.id,
+                "user_id": config.user_id,
+                "url": config.url,
+                "token": config.token,
+                "default_project_id": config.default_project_id,
+                "created_at": config.created_at.isoformat() if config.created_at else None,
+                "updated_at": config.updated_at.isoformat() if config.updated_at else None,
+            }
+
+    def delete_gitlab_config(self, user_id: int) -> bool:
+        """删除用户的 GitLab 配置"""
+        with self.get_session() as session:
+            deleted = (
+                session.query(GitLabConfig)
+                .filter(GitLabConfig.user_id == user_id)
+                .delete()
+            )
+            return deleted > 0
+
+    # ==================== AI 配置相关操作 ====================
+
+    def upsert_ai_config(
+        self,
+        user_id: int,
+        provider: str,
+        openai_api_key: Optional[str] = None,
+        openai_base_url: Optional[str] = None,
+        openai_model: str = "gpt-4",
+        openai_temperature: float = 0.3,
+        openai_max_tokens: int = 2000,
+        ollama_base_url: str = "http://localhost:11434",
+        ollama_model: str = "codellama",
+        review_rules: Optional[List[str]] = None,
+    ) -> AIConfig:
+        """创建或更新 AI 配置"""
+        with self.get_session() as session:
+            # 查找是否已存在
+            existing = (
+                session.query(AIConfig)
+                .filter(AIConfig.user_id == user_id)
+                .first()
+            )
+
+            # 将温度转换为整数存储（乘以100）
+            temp_int = int(openai_temperature * 100)
+
+            # 将审查规则转换为 JSON
+            rules_json = json.dumps(review_rules) if review_rules else None
+
+            if existing:
+                # 更新现有配置
+                existing.provider = provider
+                existing.openai_api_key = openai_api_key
+                existing.openai_base_url = openai_base_url
+                existing.openai_model = openai_model
+                existing.openai_temperature = temp_int
+                existing.openai_max_tokens = openai_max_tokens
+                existing.ollama_base_url = ollama_base_url
+                existing.ollama_model = ollama_model
+                existing.review_rules = rules_json
+                existing.updated_at = now_utc()
+                session.merge(existing)
+                session.flush()
+                session.refresh(existing)
+                return existing
+            else:
+                # 创建新配置
+                config = AIConfig(
+                    user_id=user_id,
+                    provider=provider,
+                    openai_api_key=openai_api_key,
+                    openai_base_url=openai_base_url,
+                    openai_model=openai_model,
+                    openai_temperature=temp_int,
+                    openai_max_tokens=openai_max_tokens,
+                    ollama_base_url=ollama_base_url,
+                    ollama_model=ollama_model,
+                    review_rules=rules_json,
+                )
+                session.add(config)
+                session.flush()
+                session.refresh(config)
+                return config
+
+    def get_ai_config(self, user_id: int) -> Optional[dict]:
+        """获取用户的 AI 配置（字典格式）"""
+        with self.get_session() as session:
+            config = (
+                session.query(AIConfig)
+                .filter(AIConfig.user_id == user_id)
+                .first()
+            )
+            if config is None:
+                return None
+
+            # 解析审查规则
+            review_rules = None
+            if config.review_rules:
+                try:
+                    review_rules = json.loads(config.review_rules)
+                except:
+                    review_rules = []
+
+            return {
+                "id": config.id,
+                "user_id": config.user_id,
+                "provider": config.provider,
+                "openai_api_key": config.openai_api_key,
+                "openai_base_url": config.openai_base_url,
+                "openai_model": config.openai_model,
+                "openai_temperature": config.openai_temperature / 100.0,  # 转换回浮点数
+                "openai_max_tokens": config.openai_max_tokens,
+                "ollama_base_url": config.ollama_base_url,
+                "ollama_model": config.ollama_model,
+                "review_rules": review_rules or [],
+                "created_at": config.created_at.isoformat() if config.created_at else None,
+                "updated_at": config.updated_at.isoformat() if config.updated_at else None,
+            }
+
+    def delete_ai_config(self, user_id: int) -> bool:
+        """删除用户的 AI 配置"""
+        with self.get_session() as session:
+            deleted = (
+                session.query(AIConfig)
+                .filter(AIConfig.user_id == user_id)
+                .delete()
+            )
+            return deleted > 0

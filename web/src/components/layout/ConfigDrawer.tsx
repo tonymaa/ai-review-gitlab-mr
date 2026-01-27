@@ -31,25 +31,32 @@ const ConfigDrawer: FC<ConfigDrawerProps> = ({ open, onClose }) => {
     setLoading(true)
     try {
       const config = await api.getConfig()
+
+      // 处理可能为空的情况
+      if (!config.gitlab || !config.ai) {
+        console.warn('Config not fully loaded:', config)
+      }
+
       form.setFieldsValue({
         // GitLab
-        gitlab_url: config.gitlab.url,
-        gitlab_token: config.gitlab.token,
-        gitlab_default_project_id: config.gitlab.default_project_id,
+        gitlab_url: config.gitlab?.url || '',
+        gitlab_token: config.gitlab?.token || '',
+        gitlab_default_project_id: config.gitlab?.default_project_id || '',
 
         // AI
-        ai_provider: config.ai.provider,
-        openai_api_key: config.ai.openai_api_key,
-        openai_base_url: config.ai.openai_base_url,
-        openai_model: config.ai.openai_model,
-        openai_temperature: config.ai.openai_temperature,
-        openai_max_tokens: config.ai.openai_max_tokens,
-        ollama_base_url: config.ai.ollama_base_url,
-        ollama_model: config.ai.ollama_model,
-        review_rules: config.ai.review_rules,
+        ai_provider: config.ai?.provider || 'openai',
+        openai_api_key: config.ai?.openai?.api_key || '',
+        openai_base_url: config.ai?.openai?.base_url || '',
+        openai_model: config.ai?.openai?.model || 'gpt-4',
+        openai_temperature: config.ai?.openai?.temperature ?? 0.3,
+        openai_max_tokens: config.ai?.openai?.max_tokens ?? 2000,
+        ollama_base_url: config.ai?.ollama?.base_url || 'http://localhost:11434',
+        ollama_model: config.ai?.ollama?.model || 'codellama',
+        review_rules: config.ai?.review_rules?.join('\n') || '',
       })
     } catch (err) {
       console.error('Failed to load config:', err)
+      message.error('加载配置失败')
     } finally {
       setLoading(false)
     }
@@ -60,22 +67,31 @@ const ConfigDrawer: FC<ConfigDrawerProps> = ({ open, onClose }) => {
       const values = await form.validateFields()
       setSaving(true)
 
+      // 将审查规则从字符串转换为数组
+      const rulesArray = values.review_rules
+        ? values.review_rules.split('\n').filter((r: string) => r.trim())
+        : []
+
       await api.updateConfig({
         gitlab: {
           url: values.gitlab_url,
           token: values.gitlab_token,
-          default_project_id: values.gitlab_default_project_id,
+          default_project_id: values.gitlab_default_project_id || undefined,
         },
         ai: {
           provider: values.ai_provider,
-          openai_api_key: values.openai_api_key,
-          openai_base_url: values.openai_base_url,
-          openai_model: values.openai_model,
-          openai_temperature: values.openai_temperature,
-          openai_max_tokens: values.openai_max_tokens,
-          ollama_base_url: values.ollama_base_url,
-          ollama_model: values.ollama_model,
-          review_rules: values.review_rules || [],
+          openai: {
+            api_key: values.openai_api_key,
+            base_url: values.openai_base_url || undefined,
+            model: values.openai_model,
+            temperature: values.openai_temperature,
+            max_tokens: values.openai_max_tokens,
+          },
+          ollama: {
+            base_url: values.ollama_base_url,
+            model: values.ollama_model,
+          },
+          review_rules: rulesArray,
         },
       })
 
@@ -83,6 +99,7 @@ const ConfigDrawer: FC<ConfigDrawerProps> = ({ open, onClose }) => {
       onClose()
     } catch (err) {
       console.error('Failed to save config:', err)
+      message.error('保存配置失败')
     } finally {
       setSaving(false)
     }

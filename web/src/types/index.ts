@@ -25,23 +25,33 @@ export interface GitLabConfig {
   default_project_id?: string;
 }
 
+/** OpenAI 配置 */
+export interface OpenAIConfig {
+  api_key: string;
+  base_url?: string;
+  model: string;
+  temperature: number;
+  max_tokens: number;
+}
+
+/** Ollama 配置 */
+export interface OllamaConfig {
+  base_url: string;
+  model: string;
+}
+
 /** AI 配置 */
 export interface AIConfig {
   provider: 'openai' | 'ollama';
-  openai_api_key: string;
-  openai_base_url?: string;
-  openai_model: string;
-  openai_temperature: number;
-  openai_max_tokens: number;
-  ollama_base_url: string;
-  ollama_model: string;
+  openai: OpenAIConfig;
+  ollama: OllamaConfig;
   review_rules: string[];
 }
 
 /** 应用配置 */
 export interface AppConfig {
-  gitlab: GitLabConfig;
-  ai: AIConfig;
+  gitlab?: GitLabConfig | null;
+  ai?: AIConfig | null;
 }
 
 /** 项目信息 */
