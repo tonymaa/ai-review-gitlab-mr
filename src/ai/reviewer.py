@@ -312,20 +312,29 @@ class OpenAIReviewer(AIReviewer):
 
             return result
 
-        # 使用新的事件循环运行异步函数，避免事件循环关闭问题
+        # 检查是否已有运行中的事件循环（比如在 FastAPI 中）
         try:
+            loop = asyncio.get_running_loop()
+            # 已有运行中的循环，使用 nest_asyncio 来支持嵌套
+            import nest_asyncio
+            nest_asyncio.apply()
+            result = loop.run_until_complete(_review_all_files())
+            # 不关闭客户端，因为循环不是我们创建的
+            return result
+        except RuntimeError:
+            # 没有运行中的循环，创建新的
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            result = loop.run_until_complete(_review_all_files())
-        finally:
-            # 先关闭客户端，再关闭事件循环
             try:
-                loop.run_until_complete(self.client.close())
-            except Exception:
-                pass
-            loop.close()
-
-        return result
+                result = loop.run_until_complete(_review_all_files())
+                return result
+            finally:
+                # 先关闭客户端，再关闭事件循环
+                try:
+                    loop.run_until_complete(self.client.close())
+                except Exception:
+                    pass
+                loop.close()
 
     def _build_detailed_file_review_prompt(
         self,

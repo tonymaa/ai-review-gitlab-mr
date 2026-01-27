@@ -2,7 +2,7 @@
  * 项目选择模态框组件
  */
 
-import { type FC, useState, useEffect } from 'react'
+import { type FC, useState, useEffect, useMemo } from 'react'
 import { Modal, List, Input, Typography, Space, Spin, Empty, Tag } from 'antd'
 import { SearchOutlined, ProjectOutlined } from '@ant-design/icons'
 import type { Project } from '../../types'
@@ -35,10 +35,10 @@ const ProjectSelectorModal: FC<ProjectSelectorModalProps> = ({
     }
   }, [open])
 
-  const loadProjects = async (search?: string) => {
+  const loadProjects = async () => {
     setLoading(true)
     try {
-      const result = await api.listProjects(search)
+      const result = await api.listProjects()
       setProjects(result)
     } catch (err) {
       console.error('Failed to load projects:', err)
@@ -47,10 +47,16 @@ const ProjectSelectorModal: FC<ProjectSelectorModalProps> = ({
     }
   }
 
-  const handleSearch = (value: string) => {
-    setSearchText(value)
-    loadProjects(value || undefined)
-  }
+  // 本地过滤项目
+  const filteredProjects = useMemo(() => {
+    if (!searchText) return projects
+    const searchLower = searchText.toLowerCase()
+    return projects.filter(project =>
+      project.name.toLowerCase().includes(searchLower) ||
+      project.path_with_namespace.toLowerCase().includes(searchLower) ||
+      (project.description && project.description.toLowerCase().includes(searchLower))
+    )
+  }, [projects, searchText])
 
   const handleSelect = (project: Project) => {
     onSelectProject(project)
@@ -69,20 +75,21 @@ const ProjectSelectorModal: FC<ProjectSelectorModalProps> = ({
         <Search
           placeholder="搜索项目..."
           allowClear
-          onChange={(e) => handleSearch(e.target.value)}
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
           prefix={<SearchOutlined />}
         />
 
         <div style={{ maxHeight: 400, overflowY: 'auto' }}>
           <Spin spinning={loading}>
-            {projects.length === 0 ? (
+            {filteredProjects.length === 0 ? (
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
                 description={searchText ? '无匹配项目' : '暂无项目'}
               />
             ) : (
               <List
-                dataSource={projects}
+                dataSource={filteredProjects}
                 renderItem={(project) => (
                   <List.Item
                     key={project.id}

@@ -119,3 +119,7 @@ code {
 .diff-line-deletion-marker {
   color: #ff4d4f;
 }
+
+.comment-tab .ant-tabs-content-holder{
+  overflow: auto;
+}

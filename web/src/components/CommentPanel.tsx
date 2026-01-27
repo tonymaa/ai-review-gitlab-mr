@@ -11,6 +11,8 @@ import {
   UserOutlined,
   EditOutlined,
   DeleteOutlined,
+  CloseOutlined,
+  CheckOutlined,
 } from '@ant-design/icons'
 import type { Note, ReviewComment } from '../types'
 import { api } from '../api/client'
@@ -38,6 +40,8 @@ const CommentPanel: FC<CommentPanelProps> = () => {
   const [publishing, setPublishing] = useState(false)
   const [aiReviewing, setAiReviewing] = useState(false)
   const [activeTab, setActiveTab] = useState('comments')
+  const [editingAIComment, setEditingAIComment] = useState<{ index: number; content: string } | null>(null)
+  const [sendingAIComment, setSendingAIComment] = useState<number | null>(null)
 
   // 当 MR 变化时加载评论
   useEffect(() => {
@@ -173,6 +177,64 @@ const CommentPanel: FC<CommentPanelProps> = () => {
     }
   }
 
+  // 开始编辑 AI 评论
+  const handleStartEditAIComment = (index: number, content: string) => {
+    setEditingAIComment({ index, content })
+  }
+
+  // 取消编辑 AI 评论
+  const handleCancelEditAIComment = () => {
+    setEditingAIComment(null)
+  }
+
+  // 保存 AI 评论修改
+  const handleSaveAIComment = () => {
+    if (editingAIComment) {
+      const updatedComments = [...aiComments]
+      updatedComments[editingAIComment.index] = {
+        ...updatedComments[editingAIComment.index],
+        content: editingAIComment.content,
+      }
+      setAiComments(updatedComments)
+      setEditingAIComment(null)
+      message.success('评论已更新')
+    }
+  }
+
+  // 发送 AI 评论到 GitLab
+  const handleSendAIComment = async (comment: ReviewComment, index: number) => {
+    if (!currentMR || !currentProject) {
+      message.warning('请先选择一个 MR')
+      return
+    }
+
+    setSendingAIComment(index)
+    try {
+      await api.createMergeRequestNote(
+        currentProject.id.toString(),
+        currentMR.iid,
+        {
+          body: comment.content,
+          file_path: comment.file_path,
+          line_number: comment.line_number,
+        }
+      )
+
+      message.success('评论已发布到 GitLab')
+
+      // 从 AI 评论列表中删除已发送的评论
+      const updatedComments = aiComments.filter((_, i) => i !== index)
+      setAiComments(updatedComments)
+
+      // 重新加载评论到"评论"标签页
+      await loadNotes()
+    } catch (err: any) {
+      message.error(err.response?.data?.detail || '发布失败')
+    } finally {
+      setSendingAIComment(null)
+    }
+  }
+
   const getSeverityTag = (severity: string) => {
     switch (severity) {
       case 'critical':
@@ -230,39 +292,96 @@ const CommentPanel: FC<CommentPanelProps> = () => {
     </List.Item>
   )
 
-  const renderAIComment = (comment: ReviewComment, index: number) => (
-    <List.Item key={index}>
-      <List.Item.Meta
-        avatar={
+  const renderAIComment = (comment: ReviewComment, index: number) => {
+    const isEditing = editingAIComment?.index === index
+    const isSending = sendingAIComment === index
+
+    return (
+      <List.Item key={index} style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
+        <div style={{ width: '100%', display: 'flex', gap: 8 }}>
           <Avatar
             icon={<RobotOutlined />}
             size="small"
-            style={{ background: '#1677ff' }}
+            style={{ background: '#1677ff', flexShrink: 0 }}
           />
-        }
-        title={
-          <Space>
-            <Text strong>AI 审查</Text>
-            {getSeverityTag(comment.severity)}
-            {comment.file_path && (
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                {comment.file_path}
-                {comment.line_number && `:${comment.line_number}`}
-              </Text>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {/* 标题栏 */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <Space size="small">
+                <Text strong>AI 审查</Text>
+                {getSeverityTag(comment.severity)}
+                {comment.file_path && (
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    {comment.file_path}
+                    {comment.line_number && `:${comment.line_number}`}
+                  </Text>
+                )}
+              </Space>
+            </div>
+
+            {/* 内容区域 */}
+            {isEditing ? (
+              <TextArea
+                value={editingAIComment.content}
+                onChange={(e) => setEditingAIComment({ ...editingAIComment, content: e.target.value })}
+                autoSize={{ minRows: 2, maxRows: 8 }}
+                style={{ marginBottom: 8, fontSize: 13 }}
+              />
+            ) : (
+              <Paragraph
+                style={{ marginBottom: 8, whiteSpace: 'pre-wrap', fontSize: 13 }}
+                ellipsis={{ rows: 4, expandable: true, symbol: '展开' }}
+              >
+                {comment.content}
+              </Paragraph>
             )}
-          </Space>
-        }
-        description={
-          <Paragraph
-            style={{ marginBottom: 0, whiteSpace: 'pre-wrap' }}
-            ellipsis={{ rows: 4, expandable: true, symbol: '展开' }}
-          >
-            {comment.content}
-          </Paragraph>
-        }
-      />
-    </List.Item>
-  )
+
+            {/* 操作按钮 */}
+            <Space size="small">
+              {isEditing ? (
+                <>
+                  <Button
+                    type="primary"
+                    size="small"
+                    icon={<CheckOutlined />}
+                    onClick={handleSaveAIComment}
+                  >
+                    保存
+                  </Button>
+                  <Button
+                    size="small"
+                    icon={<CloseOutlined />}
+                    onClick={handleCancelEditAIComment}
+                  >
+                    取消
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    type="primary"
+                    size="small"
+                    icon={<SendOutlined />}
+                    onClick={() => handleSendAIComment(comment, index)}
+                    loading={isSending}
+                  >
+                    发送
+                  </Button>
+                  <Button
+                    size="small"
+                    icon={<EditOutlined />}
+                    onClick={() => handleStartEditAIComment(index, comment.content)}
+                  >
+                    编辑
+                  </Button>
+                </>
+              )}
+            </Space>
+          </div>
+        </div>
+      </List.Item>
+    )
+  }
 
   return (
     <div style={{
@@ -297,7 +416,7 @@ const CommentPanel: FC<CommentPanelProps> = () => {
             disabled={!currentMR}
             size="small"
           >
-            AI 审查
+            AI 审查全部文件
           </Button>
           <Button
             icon={<RobotOutlined />}
@@ -312,10 +431,12 @@ const CommentPanel: FC<CommentPanelProps> = () => {
       </div>
 
       {/* 内容：Tab */}
-      <div style={{ flex: 1, overflow: 'hidden' }}>
+      <div style={{ flex: 1, overflow: 'hidden', minHeight: 0 }}>
         <Tabs
+          className='comment-tab'
           activeKey={activeTab}
           onChange={setActiveTab}
+          style={{ height: '100%', display: 'flex', flexDirection: 'column' }}
           items={[
             {
               key: 'comments',
@@ -327,7 +448,7 @@ const CommentPanel: FC<CommentPanelProps> = () => {
                 </Space>
               ),
               children: (
-                <div style={{ height: 'calc(100% - 46px)', overflow: 'auto' }}>
+                <div style={{ height: '100%', overflowY: 'auto', overflowX: 'hidden' }}>
                   <Spin spinning={loading}>
                     {notes.length === 0 ? (
                       <Empty
@@ -356,7 +477,7 @@ const CommentPanel: FC<CommentPanelProps> = () => {
                 </Space>
               ),
               children: (
-                <div style={{ height: 'calc(100% - 46px)', overflow: 'auto' }}>
+                <div style={{ height: '100%', overflowY: 'auto', overflowX: 'hidden' }}>
                   {aiComments.length === 0 ? (
                     <Empty
                       image={Empty.PRESENTED_IMAGE_SIMPLE}
