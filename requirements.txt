@@ -1,9 +1,9 @@
-# PyQt6 GUI Framework
-PyQt6==6.7.0
-PyQt6-WebEngine==6.7.0
+# PyQt6 GUI Framework (可选 - 原桌面应用)
+# PyQt6==6.7.0
+# PyQt6-WebEngine==6.7.0
 
-# UI Theme
-qdarktheme==0.3.4
+# UI Theme (可选 - 仅 PyQt6 需要)
+# qdarktheme>=0.3.0
 
 # GitLab Integration
 python-gitlab==4.6.0
@@ -27,3 +27,8 @@ openai==1.30.0
 # Utilities
 python-dotenv==1.0.1
 rich==13.7.1
+
+# Web Server (FastAPI)
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+websockets==13.1
