@@ -266,7 +266,7 @@ const CommentPanel: FC<CommentPanelProps> = () => {
             />
           }
           title={
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', width: '100%', flexDirection: 'column' }}>
               <Space>
                 <Text strong>{note.author_name}</Text>
                 <Text type="secondary" style={{ fontSize: 12 }}>
