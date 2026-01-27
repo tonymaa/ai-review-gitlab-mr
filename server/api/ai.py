@@ -6,9 +6,10 @@
 import logging
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
 # 添加项目根目录到 Python 路径
@@ -17,14 +18,73 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from src.gitlab.client import GitLabClient
 from src.gitlab.models import MergeRequestInfo, DiffFile
 from src.ai.reviewer import create_reviewer
-from src.core.config import settings
+from src.core.database import DatabaseManager
+from src.core.auth import verify_token
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# 全局 GitLab 客户端引用 (从 gitlab 模块共享)
-from server.api import gitlab
-_gitlab_client = lambda: gitlab._gitlab_client
+# HTTP Bearer 认证
+security = HTTPBearer()
+
+
+# ==================== 依赖注入 ====================
+
+def get_db() -> DatabaseManager:
+    """获取数据库管理器"""
+    from server.main import app
+    db: DatabaseManager = app.state.db
+    return db
+
+
+def get_current_user_id(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: DatabaseManager = Depends(get_db),
+) -> int:
+    """从 token 获取当前用户 ID"""
+    token = credentials.credentials
+    payload = verify_token(token)
+    if payload is None:
+        raise HTTPException(
+            status_code=401,
+            detail="无效的认证凭据",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    user_id_str = payload.get("sub")
+    if user_id_str is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Token 中没有用户信息",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    try:
+        return int(user_id_str)
+    except (ValueError, TypeError):
+        raise HTTPException(
+            status_code=401,
+            detail="Token 中的用户 ID 格式无效",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
+def get_gitlab_client(
+    user_id: int = Depends(get_current_user_id),
+    db: DatabaseManager = Depends(get_db),
+) -> GitLabClient:
+    """获取当前用户的 GitLab 客户端"""
+    config = db.get_gitlab_config(user_id)
+    if not config:
+        raise HTTPException(
+            status_code=400,
+            detail="请先连接到 GitLab",
+        )
+
+    return GitLabClient(
+        url=config["url"],
+        token=config["token"],
+    )
 
 
 # ==================== Request/Response 模型 ====================
@@ -71,27 +131,27 @@ _review_tasks: dict = {}
 
 # ==================== 辅助函数 ====================
 
-def _build_review_config(provider: str) -> dict:
+def _build_review_config(ai_config: dict, provider: str) -> dict:
     """构建审查配置"""
     config = {
         "provider": provider,
         "temperature": 0.3,
         "max_tokens": 2000,
-        "review_rules": settings.ai.review_rules,
+        "review_rules": ai_config.get("review_rules", []),
     }
 
     if provider == "openai":
         config.update({
-            "api_key": settings.ai.openai.api_key,
-            "model": settings.ai.openai.model,
-            "base_url": settings.ai.openai.base_url,
-            "temperature": settings.ai.openai.temperature,
-            "max_tokens": settings.ai.openai.max_tokens,
+            "api_key": ai_config.get("openai_api_key", ""),
+            "model": ai_config.get("openai_model", "gpt-4"),
+            "base_url": ai_config.get("openai_base_url"),
+            "temperature": ai_config.get("openai_temperature", 0.3),
+            "max_tokens": ai_config.get("openai_max_tokens", 2000),
         })
     elif provider == "ollama":
         config.update({
-            "base_url": settings.ai.ollama.base_url,
-            "model": settings.ai.ollama.model,
+            "base_url": ai_config.get("ollama_base_url", "http://localhost:11434"),
+            "model": ai_config.get("ollama_model", "codellama"),
         })
 
     return config
@@ -210,15 +270,21 @@ def _run_review(task_id: str, client: GitLabClient, project_id: str, mr_iid: int
 # ==================== API 端点 ====================
 
 @router.post("/review", response_model=dict)
-async def start_review(request: ReviewRequest, background_tasks: BackgroundTasks):
+async def start_review(
+    request: ReviewRequest,
+    background_tasks: BackgroundTasks,
+    user_id: int = Depends(get_current_user_id),
+    db: DatabaseManager = Depends(get_db),
+    client: GitLabClient = Depends(get_gitlab_client),
+):
     """启动 AI 审查任务"""
-    client = _gitlab_client()
-    if not client:
-        raise HTTPException(status_code=401, detail="未连接到 GitLab")
+    # 获取用户的 AI 配置
+    ai_config = db.get_ai_config(user_id)
+    if not ai_config:
+        raise HTTPException(status_code=400, detail="请先配置 AI")
 
-    # 检查 AI 配置
-    provider = request.provider or settings.ai.provider
-    if provider == "openai" and not settings.ai.openai.api_key:
+    provider = request.provider or ai_config.get("provider", "openai")
+    if provider == "openai" and not ai_config.get("openai_api_key"):
         raise HTTPException(status_code=400, detail="OpenAI API Key 未配置")
 
     # 生成任务 ID
@@ -231,7 +297,7 @@ async def start_review(request: ReviewRequest, background_tasks: BackgroundTasks
     }
 
     # 构建配置
-    config = _build_review_config(provider)
+    config = _build_review_config(ai_config, provider)
 
     # 启动后台任务
     background_tasks.add_task(
@@ -267,15 +333,20 @@ async def get_review_status(task_id: str):
 
 
 @router.post("/review/file", response_model=ReviewResponse)
-async def review_single_file(request: FileReviewRequest):
+async def review_single_file(
+    request: FileReviewRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: DatabaseManager = Depends(get_db),
+    client: GitLabClient = Depends(get_gitlab_client),
+):
     """审查单个文件"""
-    client = _gitlab_client()
-    if not client:
-        raise HTTPException(status_code=401, detail="未连接到 GitLab")
+    # 获取用户的 AI 配置
+    ai_config = db.get_ai_config(user_id)
+    if not ai_config:
+        raise HTTPException(status_code=400, detail="请先配置 AI")
 
-    # 检查 AI 配置
-    provider = request.provider or settings.ai.provider
-    if provider == "openai" and not settings.ai.openai.api_key:
+    provider = request.provider or ai_config.get("provider", "openai")
+    if provider == "openai" and not ai_config.get("openai_api_key"):
         raise HTTPException(status_code=400, detail="OpenAI API Key 未配置")
 
     try:
@@ -298,7 +369,7 @@ async def review_single_file(request: FileReviewRequest):
             raise HTTPException(status_code=404, detail="文件不存在")
 
         # 创建审查器
-        config = _build_review_config(provider)
+        config = _build_review_config(ai_config, provider)
         reviewer = create_reviewer(**config)
 
         # 执行审查
@@ -329,20 +400,27 @@ async def review_single_file(request: FileReviewRequest):
 
 
 @router.get("/config")
-async def get_ai_config():
-    """获取 AI 配置"""
+async def get_ai_config(
+    user_id: int = Depends(get_current_user_id),
+    db: DatabaseManager = Depends(get_db),
+):
+    """获取当前用户的 AI 配置"""
+    ai_config = db.get_ai_config(user_id)
+    if not ai_config:
+        raise HTTPException(status_code=404, detail="AI 配置不存在")
+
     return {
-        "provider": settings.ai.provider,
+        "provider": ai_config.get("provider"),
         "openai": {
-            "model": settings.ai.openai.model,
-            "base_url": settings.ai.openai.base_url,
+            "model": ai_config.get("openai_model"),
+            "base_url": ai_config.get("openai_base_url"),
             "api_key": "***",  # 不返回完整 key
-            "temperature": settings.ai.openai.temperature,
-            "max_tokens": settings.ai.openai.max_tokens,
+            "temperature": ai_config.get("openai_temperature"),
+            "max_tokens": ai_config.get("openai_max_tokens"),
         },
         "ollama": {
-            "base_url": settings.ai.ollama.base_url,
-            "model": settings.ai.ollama.model,
+            "base_url": ai_config.get("ollama_base_url"),
+            "model": ai_config.get("ollama_model"),
         },
-        "review_rules": settings.ai.review_rules,
+        "review_rules": ai_config.get("review_rules", []),
     }
