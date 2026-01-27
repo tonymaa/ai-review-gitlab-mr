@@ -2,7 +2,7 @@
  * Diff 查看器组件
  */
 
-import { type FC, useMemo, useEffect } from 'react'
+import { type FC, useMemo, useEffect, useRef } from 'react'
 import { List, Empty, Typography, Space, Button, Tooltip } from 'antd'
 import {
   FileOutlined,
@@ -35,7 +35,29 @@ const DiffViewer: FC<DiffViewerProps> = ({
   selectedFile,
   onSelectFile,
 }) => {
-  const { setCurrentDiffFile } = useApp()
+  const { setCurrentDiffFile, highlightLine, setHighlightLine } = useApp()
+  const diffContainerRef = useRef<HTMLDivElement>(null)
+
+  // 当高亮行变化时，滚动到对应行
+  useEffect(() => {
+    if (highlightLine && diffFile && diffFile.new_path === highlightLine.filePath && diffContainerRef.current) {
+      // 找到对应的行
+      const targetLine = diffLines.find(line =>
+        (line.newNumber === highlightLine.lineNumber || line.oldNumber === highlightLine.lineNumber)
+      )
+      if (targetLine) {
+        const lineIndex = diffLines.indexOf(targetLine)
+        // 计算滚动位置（每行高度约20px）
+        const scrollPosition = lineIndex * 20
+        diffContainerRef.current.scrollTop = scrollPosition
+      }
+      // 3秒后清除高亮
+      const timer = setTimeout(() => {
+        setHighlightLine(null)
+      }, 3000)
+      return () => clearTimeout(timer)
+    }
+  }, [highlightLine, diffFile, diffLines, setHighlightLine])
 
   // 调试：查看接收到的 props
   useEffect(() => {
@@ -59,6 +81,11 @@ const DiffViewer: FC<DiffViewerProps> = ({
 
   const renderLine = (line: typeof diffLines[number], index: number) => {
     const isHeader = line.type === 'header'
+    // 检查是否是高亮行（只高亮修改行，不包括上下文行）
+    const isHighlighted = highlightLine && diffFile &&
+      (line.type === 'addition' || line.type === 'deletion') &&
+      ((line.newNumber === highlightLine.lineNumber && line.newNumber) ||
+       (line.oldNumber === highlightLine.lineNumber && line.oldNumber))
 
     return (
       <div
@@ -70,6 +97,7 @@ const DiffViewer: FC<DiffViewerProps> = ({
           fontSize: 13,
           lineHeight: '20px',
           whiteSpace: 'pre',
+          backgroundColor: isHighlighted ? '#ffec3d26' : 'transparent',
         }}
       >
         {/* 行号 */}
@@ -188,11 +216,14 @@ const DiffViewer: FC<DiffViewerProps> = ({
       </div>
 
       {/* Diff 内容 */}
-      <div style={{
-        flex: 1,
-        overflow: 'auto',
-        padding: '8px 0',
-      }}>
+      <div
+        ref={diffContainerRef}
+        style={{
+          flex: 1,
+          overflow: 'auto',
+          padding: '8px 0',
+        }}
+      >
         {!diffFile ? (
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}

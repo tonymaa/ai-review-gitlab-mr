@@ -13,6 +13,7 @@ import {
   DeleteOutlined,
   CloseOutlined,
   CheckOutlined,
+  ArrowRightOutlined,
 } from '@ant-design/icons'
 import type { Note, ReviewComment } from '../types'
 import { api } from '../api/client'
@@ -34,6 +35,7 @@ const CommentPanel: FC<CommentPanelProps> = () => {
     setAiComments,
     loading,
     setLoading,
+    jumpToLine,
   } = useApp()
 
   const [commentInput, setCommentInput] = useState('')
@@ -295,6 +297,7 @@ const CommentPanel: FC<CommentPanelProps> = () => {
   const renderAIComment = (comment: ReviewComment, index: number) => {
     const isEditing = editingAIComment?.index === index
     const isSending = sendingAIComment === index
+    const canJump = comment.file_path && comment.line_number
 
     return (
       <List.Item key={index} style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
@@ -316,6 +319,17 @@ const CommentPanel: FC<CommentPanelProps> = () => {
                   </Text>
                 )}
               </Space>
+              {canJump && (
+                <Button
+                  type="link"
+                  size="small"
+                  icon={<ArrowRightOutlined />}
+                  onClick={() => jumpToLine(comment.file_path!, comment.line_number!)}
+                  style={{ padding: 0, fontSize: 12 }}
+                >
+                  跳转
+                </Button>
+              )}
             </div>
 
             {/* 内容区域 */}

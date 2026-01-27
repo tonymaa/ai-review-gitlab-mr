@@ -42,6 +42,11 @@ interface AppContextType {
   currentDiffFile: DiffFile | null;
   setCurrentDiffFile: (file: DiffFile | null) => void;
 
+  // 高亮行跳转
+  highlightLine: { filePath: string; lineNumber: number } | null;
+  setHighlightLine: (highlight: { filePath: string; lineNumber: number } | null) => void;
+  jumpToLine: (filePath: string, lineNumber: number) => void;
+
   // 评论
   notes: Note[];
   setNotes: (notes: Note[]) => void;
@@ -74,6 +79,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [currentMR, setCurrentMR] = useState<MergeRequest | null>(null);
   const [diffFiles, setDiffFiles] = useState<DiffFile[]>([]);
   const [currentDiffFile, setCurrentDiffFile] = useState<DiffFile | null>(null);
+  const [highlightLine, setHighlightLine] = useState<{ filePath: string; lineNumber: number } | null>(null);
   const [notes, setNotes] = useState<Note[]>([]);
   const [aiComments, setAiComments] = useState<ReviewComment[]>([]);
   const [loading, setLoading] = useState(false);
@@ -232,7 +238,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setCurrentMR(null);
     setDiffFiles([]);
     setCurrentDiffFile(null);
+    setHighlightLine(null);
   }, []);
+
+  // 跳转到指定文件的指定行
+  const jumpToLine = useCallback((filePath: string, lineNumber: number) => {
+    // 查找对应的文件
+    const targetFile = diffFiles.find(f => f.new_path === filePath || f.old_path === filePath);
+    if (targetFile) {
+      // 切换到该文件
+      setCurrentDiffFile(targetFile);
+      // 设置高亮行
+      setHighlightLine({ filePath, lineNumber });
+    }
+  }, [diffFiles, setCurrentDiffFile, setHighlightLine]);
 
   const value: AppContextType = {
     // 用户认证
@@ -262,6 +281,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setDiffFiles,
     currentDiffFile,
     setCurrentDiffFile,
+    // 高亮行跳转
+    highlightLine,
+    setHighlightLine,
+    jumpToLine,
     // 评论
     notes,
     setNotes,
