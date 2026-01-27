@@ -3,7 +3,7 @@
  */
 
 import { FC, useState, useEffect } from 'react'
-import { List, Avatar, Input, Button, Space, Typography, Tag, Empty, Spin, Tabs, Divider, message } from 'antd'
+import { List, Avatar, Input, Button, Space, Typography, Tag, Empty, Spin, Tabs, Divider, message, Modal } from 'antd'
 import {
   MessageOutlined,
   SendOutlined,
@@ -102,19 +102,57 @@ const CommentPanel: FC<CommentPanelProps> = () => {
   }
 
   const handleDeleteNote = async (noteId: number) => {
-    if (!currentMR || !currentProject) return
+    Modal.confirm({
+      title: '确认删除',
+      content: '确定要删除这条评论吗？',
+      okText: '删除',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        if (!currentMR || !currentProject) return
 
-    try {
-      await api.deleteMergeRequestNote(
-        currentProject.id.toString(),
-        currentMR.iid,
-        noteId
-      )
-      message.success('评论已删除')
-      await loadNotes()
-    } catch (err: any) {
-      message.error(err.response?.data?.detail || '删除失败')
-    }
+        try {
+          await api.deleteMergeRequestNote(
+            currentProject.id.toString(),
+            currentMR.iid,
+            noteId
+          )
+          message.success('评论已删除')
+          await loadNotes()
+        } catch (err: any) {
+          message.error(err.response?.data?.detail || '删除失败')
+        }
+      }
+    })
+  }
+
+  const handleDeleteAIComment = (index: number) => {
+    Modal.confirm({
+      title: '确认删除',
+      content: '确定要删除这条 AI 评论吗？',
+      okText: '删除',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: () => {
+        const updatedComments = aiComments.filter((_, i) => i !== index)
+        setAiComments(updatedComments)
+        message.success('AI 评论已删除')
+      }
+    })
+  }
+
+  const handleClearAIComments = () => {
+    Modal.confirm({
+      title: '确认清空',
+      content: `确定要清空所有 AI 评论吗？共 ${aiComments.length} 条`,
+      okText: '清空',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: () => {
+        setAiComments([])
+        message.success('已清空所有 AI 评论')
+      }
+    })
   }
 
   const handleAIReview = async () => {
@@ -411,6 +449,15 @@ const CommentPanel: FC<CommentPanelProps> = () => {
                   >
                     编辑
                   </Button>
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<DeleteOutlined />}
+                    onClick={() => handleDeleteAIComment(index)}
+                    danger
+                  >
+                    删除
+                  </Button>
                 </>
               )}
             </Space>
@@ -514,20 +561,36 @@ const CommentPanel: FC<CommentPanelProps> = () => {
                 </Space>
               ),
               children: (
-                <div style={{ height: '100%', overflowY: 'auto', overflowX: 'hidden' }}>
-                  {aiComments.length === 0 ? (
-                    <Empty
-                      image={Empty.PRESENTED_IMAGE_SIMPLE}
-                      description="点击 AI 审查 开始审查代码"
-                      style={{ marginTop: 60 }}
-                    />
-                  ) : (
-                    <List
-                      dataSource={aiComments}
-                      renderItem={renderAIComment}
-                      size="small"
-                    />
+                <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                  {aiComments.length > 0 && (
+                    <div style={{ padding: '2px' }}>
+                      <Button
+                        style={{float: 'right'}}
+                        type="text"
+                        size="small"
+                        icon={<DeleteOutlined />}
+                        onClick={handleClearAIComments}
+                        danger
+                      >
+                        清空所有 AI 评论
+                      </Button>
+                    </div>
                   )}
+                  <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
+                    {aiComments.length === 0 ? (
+                      <Empty
+                        image={Empty.PRESENTED_IMAGE_SIMPLE}
+                        description="点击 AI 审查 开始审查代码"
+                        style={{ marginTop: 60 }}
+                      />
+                    ) : (
+                      <List
+                        dataSource={aiComments}
+                        renderItem={renderAIComment}
+                        size="small"
+                      />
+                    )}
+                  </div>
                 </div>
               ),
             },
