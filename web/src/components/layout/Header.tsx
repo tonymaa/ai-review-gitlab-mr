@@ -2,8 +2,8 @@
  * 顶部导航栏组件
  */
 
-import { type FC, useState } from 'react'
-import { Layout, Button, Space, Dropdown, Avatar, Typography } from 'antd'
+import { type FC, useState, useMemo } from 'react'
+import { Layout, Button, Space, Dropdown, Avatar, Typography, Tag } from 'antd'
 import {
   SettingOutlined,
   GitlabOutlined,
@@ -12,10 +12,13 @@ import {
   UnorderedListOutlined,
   ProjectOutlined,
   DownOutlined,
+  PlusOutlined,
+  DeleteOutlined,
 } from '@ant-design/icons'
 import { useApp } from '../../contexts/AppContext'
 import ProjectSelectorModal from './ProjectSelectorModal'
 import type { Project } from '../../types'
+import type { MenuProps } from 'antd'
 
 const { Header: AntHeader } = Layout
 const { Text } = Typography
@@ -27,12 +30,54 @@ interface HeaderProps {
 }
 
 const Header: FC<HeaderProps> = ({ onOpenConnect, onOpenConfig, onOpenRelatedMR }) => {
-  const { isConnected, currentUser, currentProject, setCurrentProject } = useApp()
+  const { isConnected, currentUser, projects, addProject, removeProject, currentProject, setCurrentProject } = useApp()
   const [projectModalOpen, setProjectModalOpen] = useState(false)
 
   const handleSelectProject = (project: Project) => {
+    addProject(project)
     setCurrentProject(project)
   }
+
+  // 构建项目切换菜单
+  const projectMenuItems: MenuProps['items'] = useMemo(() => {
+    const items: MenuProps['items'] = [
+      {
+        key: 'add',
+        icon: <PlusOutlined />,
+        label: '添加项目',
+        onClick: () => setProjectModalOpen(true),
+      },
+    ]
+
+    if (projects.length > 0) {
+      items.push({ type: 'divider' as const })
+
+      projects.forEach(project => {
+        items.push({
+          key: `project-${project.id}`,
+          icon: <ProjectOutlined />,
+          label: (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
+              <span>{project.name}</span>
+              <Space size="small">
+                {project.id === currentProject?.id && <Tag color="blue">当前</Tag>}
+                <DeleteOutlined
+                  style={{ fontSize: 12, color: '#ff4d4f' }}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    removeProject(project.id)
+                  }}
+                />
+              </Space>
+            </div>
+          ),
+          onClick: () => setCurrentProject(project),
+        })
+      })
+    }
+
+    return items
+  }, [projects, currentProject, setCurrentProject, removeProject])
 
   const userMenuItems = [
     {
@@ -76,31 +121,33 @@ const Header: FC<HeaderProps> = ({ onOpenConnect, onOpenConfig, onOpenRelatedMR 
           {isConnected && (
             <>
               <div style={{ width: 1, height: 16, background: '#303030' }} />
-              <div
-                onClick={() => setProjectModalOpen(true)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '4px 12px',
-                  borderRadius: 4,
-                  background: '#1f1f1f',
-                  cursor: 'pointer',
-                  border: '1px solid #303030',
-                  transition: 'border-color 0.2s',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = '#1890ff'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = '#303030'
-                }}
-              >
-                <ProjectOutlined style={{ color: currentProject ? '#1890ff' : '#888' }} />
-                <Text style={{ color: currentProject ? '#fff' : '#888' }}>
-                  {currentProject?.name || '选择项目'}
-                </Text>
-              </div>
+              <Dropdown menu={{ items: projectMenuItems }} trigger={['click']} placement="bottomLeft">
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '4px 12px',
+                    borderRadius: 4,
+                    background: '#1f1f1f',
+                    cursor: 'pointer',
+                    border: '1px solid #303030',
+                    transition: 'border-color 0.2s',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = '#1890ff'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = '#303030'
+                  }}
+                >
+                  <ProjectOutlined style={{ color: currentProject ? '#1890ff' : '#888' }} />
+                  <Text style={{ color: currentProject ? '#fff' : '#888' }}>
+                    {currentProject?.name || `选择项目 (${projects.length})`}
+                  </Text>
+                  <DownOutlined style={{ fontSize: 10, color: '#888' }} />
+                </div>
+              </Dropdown>
             </>
           )}
         </Space>
