@@ -2,16 +2,18 @@
  * Diff 查看器组件
  */
 
-import { type FC, useMemo, useEffect, useRef } from 'react'
-import { List, Empty, Typography, Space, Button, Tooltip } from 'antd'
+import { type FC, useMemo, useEffect, useRef, useState } from 'react'
+import { List, Empty, Typography, Space, Input, Popover, Button, message } from 'antd'
 import {
   FileOutlined,
   PlusOutlined,
   MinusOutlined,
   ArrowRightOutlined,
+  CommentOutlined,
 } from '@ant-design/icons'
 import type { DiffFile } from '../types'
 import { useApp } from '../contexts/AppContext'
+import { api } from '../api/client'
 
 const { Text } = Typography
 
@@ -35,8 +37,13 @@ const DiffViewer: FC<DiffViewerProps> = ({
   selectedFile,
   onSelectFile,
 }) => {
-  const { setCurrentDiffFile, highlightLine, setHighlightLine } = useApp()
+  const { setCurrentDiffFile, highlightLine, setHighlightLine, currentProject, currentMR } = useApp()
   const diffContainerRef = useRef<HTMLDivElement>(null)
+
+  // 行内评论状态
+  const [commentLineId, setCommentLineId] = useState<string | null>(null)
+  const [commentInput, setCommentInput] = useState('')
+  const [submittingComment, setSubmittingComment] = useState(false)
 
   // 当高亮行变化时，滚动到对应行
   useEffect(() => {
@@ -87,6 +94,72 @@ const DiffViewer: FC<DiffViewerProps> = ({
       ((line.newNumber === highlightLine.lineNumber && line.newNumber) ||
        (line.oldNumber === highlightLine.lineNumber && line.oldNumber))
 
+    // 生成行的唯一ID
+    const lineId = `${diffFile?.new_path}-${index}-${line.oldNumber}-${line.newNumber}`
+    const isCommenting = commentLineId === lineId
+
+    // 发送行内评论
+    const handleSubmitComment = async () => {
+      if (!commentInput.trim() || !diffFile || !currentProject || !currentMR) return
+
+      setSubmittingComment(true)
+      try {
+        await api.createMergeRequestNote(
+          currentProject.id.toString(),
+          currentMR.iid,
+          {
+            body: commentInput,
+            file_path: diffFile.new_path,
+            line_number: line.newNumber || line.oldNumber,
+          }
+        )
+        message.success('评论已发布')
+        setCommentInput('')
+        setCommentLineId(null)
+      } catch (err) {
+        const error = err as { response?: { data?: { detail?: string } } }
+        message.error(error.response?.data?.detail || '发送评论失败')
+      } finally {
+        setSubmittingComment(false)
+      }
+    }
+
+    // 评论输入框内容
+    const commentContent = (
+      <div style={{ width: 300 }}>
+        <Input.TextArea
+          value={commentInput}
+          onChange={(e) => setCommentInput(e.target.value)}
+          placeholder="输入评论..."
+          autoSize={{ minRows: 3, maxRows: 6 }}
+          onPressEnter={(e) => {
+            if (e.shiftKey) return
+            e.preventDefault()
+            handleSubmitComment()
+          }}
+        />
+        <div style={{ marginTop: 8, textAlign: 'right' }}>
+          <Space>
+            <Button size="small" onClick={() => setCommentLineId(null)}>
+              取消
+            </Button>
+            <Button
+              type="primary"
+              size="small"
+              onClick={handleSubmitComment}
+              loading={submittingComment}
+              disabled={!commentInput.trim()}
+            >
+              发送
+            </Button>
+          </Space>
+        </div>
+      </div>
+    )
+
+    // 只有修改行（新增或删除）才能添加评论
+    const canAddComment = !isHeader && (line.type === 'addition' || line.type === 'deletion')
+
     return (
       <div
         key={index}
@@ -98,8 +171,58 @@ const DiffViewer: FC<DiffViewerProps> = ({
           lineHeight: '20px',
           whiteSpace: 'pre',
           backgroundColor: isHighlighted ? '#ffec3d26' : 'transparent',
+          position: 'relative',
+        }}
+        onMouseEnter={(e) => {
+          // 悬停时显示评论图标
+          const iconArea = (e.currentTarget as HTMLElement).querySelector('.comment-icon-area')
+          if (iconArea && !isCommenting) {
+            (iconArea as HTMLElement).style.opacity = '1'
+          }
+        }}
+        onMouseLeave={(e) => {
+          // 离开时隐藏评论图标（除非正在编辑）
+          if (!isCommenting) {
+            const iconArea = (e.currentTarget as HTMLElement).querySelector('.comment-icon-area')
+            if (iconArea) {
+              (iconArea as HTMLElement).style.opacity = '0'
+            }
+          }
         }}
       >
+        {/* 评论图标 */}
+        {canAddComment && (
+          <div
+            className="comment-icon-area"
+            style={{
+              width: 30,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+              opacity: isCommenting ? 1 : 0,
+              transition: 'opacity 0.2s',
+            }}
+          >
+            <Popover
+              content={commentContent}
+              title="添加行内评论"
+              trigger="click"
+              open={isCommenting}
+              onOpenChange={(open) => {
+                if (open) {
+                  setCommentLineId(lineId)
+                } else if (commentLineId === lineId) {
+                  setCommentLineId(null)
+                  setCommentInput('')
+                }
+              }}
+            >
+              <CommentOutlined style={{ cursor: 'pointer', color: '#1677ff' }} />
+            </Popover>
+          </div>
+        )}
+
         {/* 行号 */}
         <div style={{
           width: 50,
