@@ -430,9 +430,20 @@ async def get_merge_request_notes(
             project_id=project_id,
             mr_iid=mr_iid,
         )
-        # 转换为统一格式
+        # 转换为统一格式，包含位置信息
         result = []
         for note in notes:
+            # 从 position 字段提取文件路径和行号
+            position = note.get("position", {})
+            file_path = None
+            line_number = None
+
+            if position:
+                # 优先使用 new_path，如果没有则使用 old_path
+                file_path = position.get("new_path") or position.get("old_path")
+                # 优先使用 new_line，如果没有则使用 old_line
+                line_number = position.get("new_line") or position.get("old_line")
+
             result.append({
                 "id": note.get("id"),
                 "author_name": note.get("author", {}).get("name"),
@@ -441,6 +452,8 @@ async def get_merge_request_notes(
                 "created_at": note.get("created_at"),
                 "system": note.get("system", False),
                 "type": "note",
+                "file_path": file_path,
+                "line_number": line_number,
             })
         return result
 

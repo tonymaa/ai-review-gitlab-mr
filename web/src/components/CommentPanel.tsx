@@ -250,49 +250,73 @@ const CommentPanel: FC<CommentPanelProps> = () => {
     }
   }
 
-  const renderNote = (note: Note) => (
-    <List.Item key={note.id}>
-      <List.Item.Meta
-        avatar={
-          <Avatar
-            src={note.author_avatar}
-            icon={<UserOutlined />}
-            size="small"
-          />
-        }
-        title={
-          <Space>
-            <Text strong>{note.author_name}</Text>
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              {new Date(note.created_at).toLocaleString()}
-            </Text>
-          </Space>
-        }
-        description={
-          <div>
-            <Paragraph
-              style={{ marginBottom: 8, whiteSpace: 'pre-wrap' }}
-              ellipsis={{ rows: 6, expandable: true, symbol: '展开' }}
-            >
-              {note.body}
-            </Paragraph>
-            {!note.system && (
+  const renderNote = (note: Note) => {
+    console.log("note>>", note);
+    
+    const canJump = note.file_path && note.line_number
+
+    return (
+      <List.Item key={note.id}>
+        <List.Item.Meta
+          avatar={
+            <Avatar
+              src={note.author_avatar}
+              icon={<UserOutlined />}
+              size="small"
+            />
+          }
+          title={
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
               <Space>
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<DeleteOutlined />}
-                  onClick={() => handleDeleteNote(note.id)}
-                >
-                  删除
-                </Button>
+                <Text strong>{note.author_name}</Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  {new Date(note.created_at).toLocaleString()}
+                </Text>
               </Space>
-            )}
-          </div>
-        }
-      />
-    </List.Item>
-  )
+              {canJump && (
+                <Space size={4} style={{ flexShrink: 0 }}>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    {note.file_path}:{note.line_number}
+                  </Text>
+                  <Button
+                    type="link"
+                    size="small"
+                    icon={<ArrowRightOutlined />}
+                    onClick={() => jumpToLine(note.file_path!, note.line_number!)}
+                    style={{ padding: 0, fontSize: 12 }}
+                  >
+                    跳转
+                  </Button>
+                </Space>
+              )}
+            </div>
+          }
+          description={
+            <div>
+              <Paragraph
+                style={{ marginBottom: 8, whiteSpace: 'pre-wrap' }}
+                ellipsis={{ rows: 6, expandable: true, symbol: '展开' }}
+              >
+                {note.body}
+              </Paragraph>
+              {!note.system && (
+                <Space>
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<DeleteOutlined />}
+                    onClick={() => handleDeleteNote(note.id)}
+                  >
+                    删除
+                  </Button>
+                </Space>
+              )}
+            </div>
+          }
+        />
+      </List.Item>
+    )
+  }
 
   const renderAIComment = (comment: ReviewComment, index: number) => {
     const isEditing = editingAIComment?.index === index
