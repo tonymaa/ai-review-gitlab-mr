@@ -27,7 +27,7 @@ const MRListPanel: FC<MRListPanelProps> = ({
   mergeRequests,
   onSelectMR,
 }) => {
-  const { currentProject, setCurrentMR, setMergeRequests } = useApp()
+  const { currentProject, setCurrentMR, setMergeRequests, setError } = useApp()
   const [searchText, setSearchText] = useState('')
   const [stateFilter, setStateFilter] = useState<'opened' | 'closed' | 'merged' | 'all'>('opened')
   const [listLoading, setListLoading] = useState(false)
@@ -53,7 +53,9 @@ const MRListPanel: FC<MRListPanelProps> = ({
         stateFilter
       )
       setMergeRequests(mrs)
-    } catch (err) {
+    } catch (err: any) {
+      const errorMsg = err.response?.data?.detail || err.message || '加载 MR 列表失败'
+      setError(errorMsg)
       console.error('Failed to load MRs:', err)
     } finally {
       setListLoading(false)

@@ -3,7 +3,7 @@
  */
 
 import { type FC, useEffect, useState } from 'react'
-import { Layout } from 'antd'
+import { Layout, message } from 'antd'
 import { useApp } from '../../contexts/AppContext'
 import MRListPanel from '../MRListPanel'
 import DiffViewer from '../DiffViewer'
@@ -145,8 +145,8 @@ const MainLayout: FC = () => {
             console.log('No diffs found')
           }
           setDiffFiles(diffs)
-        } catch (err) {
-          console.error('Failed to load diffs:', err)
+        } catch (err: any) {
+          message.error(err.response?.data?.detail || err.message || '加载 Diff 失败')
         } finally {
           setLoading(false)
         }

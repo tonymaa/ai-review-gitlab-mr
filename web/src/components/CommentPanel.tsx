@@ -64,8 +64,8 @@ const CommentPanel: FC<CommentPanelProps> = () => {
         currentMR.iid
       )
       setNotes(result)
-    } catch (err) {
-      console.error('Failed to load notes:', err)
+    } catch (err: any) {
+      message.error(err.response?.data?.detail || err.message || '加载评论失败')
     } finally {
       setLoading(false)
     }
@@ -141,8 +141,8 @@ const CommentPanel: FC<CommentPanelProps> = () => {
             message.success(`AI 审查完成，生成 ${status.comments.length} 条评论`)
             setAiReviewing(false)
           }
-        } catch (err) {
-          console.error('Failed to poll result:', err)
+        } catch (err: any) {
+          message.error(err.response?.data?.detail || err.message || '获取审查结果失败')
           setAiReviewing(false)
         }
       }
@@ -308,7 +308,6 @@ const CommentPanel: FC<CommentPanelProps> = () => {
             {/* 标题栏 */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
               <Space size="small">
-                <Text strong>AI 审查</Text>
                 {getSeverityTag(comment.severity)}
                 {comment.file_path && (
                   <Text type="secondary" style={{ fontSize: 12 }}>

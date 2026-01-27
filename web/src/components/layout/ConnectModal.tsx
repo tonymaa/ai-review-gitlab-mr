@@ -40,7 +40,7 @@ const ConnectModal: FC<ConnectModalProps> = ({ open, onClose }) => {
 
       onClose()
     } catch (err: any) {
-      console.error('Connect failed:', err)
+      message.error(err.response?.data?.detail || err.message || '连接失败')
     } finally {
       setLoading(false)
     }
@@ -74,7 +74,6 @@ const ConnectModal: FC<ConnectModalProps> = ({ open, onClose }) => {
         >
           <Input
             placeholder="https://gitlab.com"
-            prefix="https://"
           />
         </Form.Item>
 
@@ -85,14 +84,6 @@ const ConnectModal: FC<ConnectModalProps> = ({ open, onClose }) => {
           extra="在 GitLab 用户设置中生成个人访问令牌"
         >
           <Input.Password placeholder="glpat-xxxxxxxxxxxx" />
-        </Form.Item>
-
-        <Form.Item
-          label="默认项目 ID (可选)"
-          name="default_project_id"
-          extra="连接后自动加载此项目"
-        >
-          <Input placeholder="123 或 group/project" />
         </Form.Item>
       </Form>
     </Modal>

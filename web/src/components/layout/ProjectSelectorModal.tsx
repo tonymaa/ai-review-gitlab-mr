@@ -3,7 +3,7 @@
  */
 
 import { type FC, useState, useEffect, useMemo } from 'react'
-import { Modal, List, Input, Typography, Space, Spin, Empty, Tag } from 'antd'
+import { Modal, List, Input, Typography, Space, Spin, Empty, Tag, message } from 'antd'
 import { SearchOutlined, ProjectOutlined } from '@ant-design/icons'
 import type { Project } from '../../types'
 import { api } from '../../api/client'
@@ -40,8 +40,8 @@ const ProjectSelectorModal: FC<ProjectSelectorModalProps> = ({
     try {
       const result = await api.listProjects()
       setProjects(result)
-    } catch (err) {
-      console.error('Failed to load projects:', err)
+    } catch (err: any) {
+      message.error(err.response?.data?.detail || err.message || '加载项目列表失败')
     } finally {
       setLoading(false)
     }

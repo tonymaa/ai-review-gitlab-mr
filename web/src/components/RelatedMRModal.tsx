@@ -3,7 +3,7 @@
  */
 
 import { FC, useState, useEffect } from 'react'
-import { Modal, List, Tag, Avatar, Space, Typography, Spin, Button, Tooltip } from 'antd'
+import { Modal, List, Tag, Avatar, Space, Typography, Spin, Button, Tooltip, message } from 'antd'
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
@@ -37,8 +37,8 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
     try {
       const result = await api.listRelatedMergeRequests('opened')
       setData(result)
-    } catch (err) {
-      console.error('Failed to load related MRs:', err)
+    } catch (err: any) {
+      message.error(err.response?.data?.detail || err.message || '加载 MR 列表失败')
     } finally {
       setLoading(false)
     }
@@ -64,10 +64,11 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
         item.project.id.toString(),
         item.mr.iid
       )
+      message.success('已批准')
       // 重新加载数据
       loadData()
-    } catch (err) {
-      console.error('Failed to approve MR:', err)
+    } catch (err: any) {
+      message.error(err.response?.data?.detail || err.message || '批准失败')
     }
   }
 
@@ -79,10 +80,11 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
         item.project.id.toString(),
         item.mr.iid
       )
+      message.success('已取消批准')
       // 重新加载数据
       loadData()
-    } catch (err) {
-      console.error('Failed to unapprove MR:', err)
+    } catch (err: any) {
+      message.error(err.response?.data?.detail || err.message || '取消批准失败')
     }
   }
 

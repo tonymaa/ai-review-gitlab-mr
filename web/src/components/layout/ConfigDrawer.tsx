@@ -143,12 +143,6 @@ const ConfigDrawer: FC<ConfigDrawerProps> = ({ open, onClose }) => {
             <Input.Password />
           </Form.Item>
 
-          <Form.Item
-            label="默认项目 ID"
-            name="gitlab_default_project_id"
-          >
-            <Input placeholder="123 或 group/project" />
-          </Form.Item>
 
           <Divider />
 
