@@ -20,6 +20,15 @@ from src.gitlab.models import MergeRequestInfo, DiffFile
 from src.ai.reviewer import create_reviewer
 from src.core.database import DatabaseManager
 from src.core.auth import verify_token
+from src.core.exceptions import (
+    GitLabException,
+    GitLabNotFoundError,
+    AIException,
+    AIConnectionError,
+    AIAuthError,
+    AIQuotaError,
+    AIModelNotFoundError,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -223,12 +232,6 @@ def _run_review(task_id: str, client: GitLabClient, project_id: str, mr_iid: int
     try:
         # 获取 MR 信息
         mr = client.get_merge_request(project_id, mr_iid)
-        if not mr:
-            _review_tasks[task_id] = {
-                "status": "error",
-                "error": "MR 不存在",
-            }
-            return
 
         # 获取 Diff
         diff_files = client.get_merge_request_diffs(project_id, mr_iid)
@@ -259,11 +262,47 @@ def _run_review(task_id: str, client: GitLabClient, project_id: str, mr_iid: int
             ),
         }
 
-    except Exception as e:
-        logger.error(f"审查任务失败: {e}", exc_info=True)
+    except GitLabException as e:
+        logger.error(f"审查任务失败 (GitLab错误): {e}")
         _review_tasks[task_id] = {
             "status": "error",
             "error": str(e),
+        }
+    except AIAuthError as e:
+        logger.error(f"审查任务失败 (AI认证错误): {e}")
+        _review_tasks[task_id] = {
+            "status": "error",
+            "error": str(e),
+        }
+    except AIQuotaError as e:
+        logger.error(f"审查任务失败 (AI配额错误): {e}")
+        _review_tasks[task_id] = {
+            "status": "error",
+            "error": str(e),
+        }
+    except AIModelNotFoundError as e:
+        logger.error(f"审查任务失败 (AI模型错误): {e}")
+        _review_tasks[task_id] = {
+            "status": "error",
+            "error": str(e),
+        }
+    except AIConnectionError as e:
+        logger.error(f"审查任务失败 (AI连接错误): {e}")
+        _review_tasks[task_id] = {
+            "status": "error",
+            "error": str(e),
+        }
+    except AIException as e:
+        logger.error(f"审查任务失败 (AI错误): {e}")
+        _review_tasks[task_id] = {
+            "status": "error",
+            "error": str(e),
+        }
+    except Exception as e:
+        logger.error(f"审查任务失败 (未知错误): {e}", exc_info=True)
+        _review_tasks[task_id] = {
+            "status": "error",
+            "error": f"审查失败: {str(e)}",
         }
 
 
@@ -352,8 +391,6 @@ async def review_single_file(
     try:
         # 获取 MR 信息
         mr = client.get_merge_request(request.project_id, request.mr_iid)
-        if not mr:
-            raise HTTPException(status_code=404, detail="MR 不存在")
 
         # 获取所有 Diff
         all_diffs = client.get_merge_request_diffs(request.project_id, request.mr_iid)
@@ -392,11 +429,25 @@ async def review_single_file(
             comments=comments,
         )
 
+    except GitLabNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except GitLabException as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except AIAuthError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    except AIQuotaError as e:
+        raise HTTPException(status_code=429, detail=str(e))
+    except AIModelNotFoundError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except AIConnectionError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except AIException as e:
+        raise HTTPException(status_code=500, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"文件审查失败: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"审查失败: {str(e)}")
 
 
 @router.get("/config")

@@ -15,6 +15,12 @@ from .models import (
     MRState,
 )
 from ..core.database import DatabaseManager
+from ..core.exceptions import (
+    GitLabConnectionError,
+    GitLabAuthError,
+    GitLabNotFoundError,
+    GitLabAPIError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,10 +47,12 @@ class GitLabClient:
             # 验证连接
             self._client.auth()
             logger.info(f"成功连接到GitLab: {url}")
-        except GitlabAuthenticationError:
-            raise ValueError("GitLab认证失败，请检查Token是否正确")
+        except GitlabAuthenticationError as e:
+            raise GitLabAuthError("GitLab认证失败", f"请检查Token是否正确。URL: {url}")
         except GitlabError as e:
-            raise ValueError(f"连接GitLab失败: {e}")
+            raise GitLabConnectionError("连接GitLab失败", f"{str(e)}。URL: {url}")
+        except Exception as e:
+            raise GitLabConnectionError("连接GitLab失败", f"未知错误: {str(e)}")
 
     def get_current_user(self) -> Optional[Dict[str, Any]]:
         """获取当前用户信息"""
@@ -54,7 +62,7 @@ class GitLabClient:
             logger.error(f"获取当前用户信息失败: {e}")
             return None
 
-    def get_project(self, project_id: str | int) -> Optional[ProjectInfo]:
+    def get_project(self, project_id: str | int) -> ProjectInfo:
         """
         获取项目信息
 
@@ -62,17 +70,19 @@ class GitLabClient:
             project_id: 项目ID或路径 (如: "group/project")
 
         Returns:
-            ProjectInfo对象或None
+            ProjectInfo对象
+
+        Raises:
+            GitLabNotFoundError: 项目不存在
+            GitLabAPIError: 获取项目信息失败
         """
         try:
             project = self._client.projects.get(project_id)
             return ProjectInfo.from_dict(project.asdict())
-        except GitlabGetError:
-            logger.error(f"项目不存在: {project_id}")
-            return None
+        except GitlabGetError as e:
+            raise GitLabNotFoundError("项目不存在", f"项目ID: {project_id}")
         except GitlabError as e:
-            logger.error(f"获取项目信息失败: {e}")
-            return None
+            raise GitLabAPIError("获取项目信息失败", f"项目ID: {project_id}, 错误: {str(e)}")
 
     def list_projects(
         self,
@@ -90,6 +100,9 @@ class GitLabClient:
 
         Returns:
             项目列表
+
+        Raises:
+            GitLabAPIError: 列出项目失败
         """
         try:
             projects = self._client.projects.list(
@@ -102,8 +115,7 @@ class GitLabClient:
             )
             return [ProjectInfo.from_dict(p.asdict()) for p in projects]
         except GitlabError as e:
-            logger.error(f"列出项目失败: {e}")
-            return []
+            raise GitLabAPIError("列出项目失败", f"错误: {str(e)}")
 
     def list_merge_requests(
         self,
@@ -125,6 +137,10 @@ class GitLabClient:
 
         Returns:
             MergeRequestInfo列表
+
+        Raises:
+            GitLabNotFoundError: 项目不存在
+            GitLabAPIError: 列出MR失败
         """
         try:
             project = self._client.projects.get(project_id)
@@ -148,12 +164,10 @@ class GitLabClient:
 
             return mr_list
 
-        except GitlabGetError:
-            logger.error(f"项目不存在: {project_id}")
-            return []
+        except GitlabGetError as e:
+            raise GitLabNotFoundError("项目不存在", f"项目ID: {project_id}")
         except GitlabError as e:
-            logger.error(f"列出MR失败: {e}")
-            return []
+            raise GitLabAPIError("列出MR失败", f"项目ID: {project_id}, 错误: {str(e)}")
 
     def list_all_merge_requests_related_to_me(
         self,
@@ -164,19 +178,18 @@ class GitLabClient:
 
         Args:
             state: MR状态 (opened, closed, merged, all)
-            order_by: 排序字段
-            sort: 排序方向
-            per_page: 每页数量
 
         Returns:
             (MergeRequestInfo, ProjectInfo) 元组列表
+
+        Raises:
+            GitLabAPIError: 获取相关MR失败
         """
         try:
             # 获取当前用户信息
             current_user = self.get_current_user()
             if not current_user:
-                logger.error("无法获取当前用户信息")
-                return []
+                raise GitLabAPIError("无法获取当前用户信息", "")
 
             current_user_id = current_user.get("id")
 
@@ -279,8 +292,7 @@ class GitLabClient:
             return result
 
         except GitlabError as e:
-            logger.error(f"列出所有项目相关MR失败: {e}")
-            return []
+            raise GitLabAPIError("列出所有项目相关MR失败", f"错误: {str(e)}")
 
 
     def get_merge_request(
@@ -288,7 +300,7 @@ class GitLabClient:
         project_id: str | int,
         mr_iid: int,
         include_diff: bool = False,
-    ) -> Optional[MergeRequestInfo]:
+    ) -> MergeRequestInfo:
         """
         获取单个Merge Request详情
 
@@ -298,7 +310,11 @@ class GitLabClient:
             include_diff: 是否包含Diff信息
 
         Returns:
-            MergeRequestInfo对象或None
+            MergeRequestInfo对象
+
+        Raises:
+            GitLabNotFoundError: MR不存在
+            GitLabAPIError: 获取MR详情失败
         """
         try:
             project = self._client.projects.get(project_id)
@@ -317,12 +333,10 @@ class GitLabClient:
 
             return mr_info
 
-        except GitlabGetError:
-            logger.error(f"MR不存在: {project_id}!{mr_iid}")
-            return None
+        except GitlabGetError as e:
+            raise GitLabNotFoundError("MR不存在", f"项目: {project_id}, MR IID: {mr_iid}")
         except GitlabError as e:
-            logger.error(f"获取MR详情失败: {e}")
-            return None
+            raise GitLabAPIError("获取MR详情失败", f"项目: {project_id}, MR IID: {mr_iid}, 错误: {str(e)}")
 
     def get_merge_request_diffs(
         self,
@@ -338,6 +352,10 @@ class GitLabClient:
 
         Returns:
             DiffFile列表
+
+        Raises:
+            GitLabNotFoundError: MR不存在
+            GitLabAPIError: 获取MR Diff失败
         """
         try:
             project = self._client.projects.get(project_id)
@@ -368,12 +386,10 @@ class GitLabClient:
 
             return diff_files
 
-        except GitlabGetError:
-            logger.error(f"MR不存在: {project_id}!{mr_iid}")
-            return []
+        except GitlabGetError as e:
+            raise GitLabNotFoundError("MR不存在", f"项目: {project_id}, MR IID: {mr_iid}")
         except GitlabError as e:
-            logger.error(f"获取MR Diff失败: {e}")
-            return []
+            raise GitLabAPIError("获取MR Diff失败", f"项目: {project_id}, MR IID: {mr_iid}, 错误: {str(e)}")
 
     def get_merge_request_changes(
         self,
@@ -453,6 +469,10 @@ class GitLabClient:
 
         Returns:
             是否成功
+
+        Raises:
+            GitLabNotFoundError: MR不存在
+            GitLabAPIError: 添加MR评论失败
         """
         try:
             project = self._client.projects.get(project_id)
@@ -460,9 +480,10 @@ class GitLabClient:
             mr.notes.create({"body": body})
             logger.info(f"成功为MR {mr_iid}添加评论")
             return True
+        except GitlabGetError as e:
+            raise GitLabNotFoundError("MR不存在", f"项目: {project_id}, MR IID: {mr_iid}")
         except GitlabError as e:
-            logger.error(f"添加MR评论失败: {e}")
-            return False
+            raise GitLabAPIError("添加MR评论失败", f"项目: {project_id}, MR IID: {mr_iid}, 错误: {str(e)}")
 
     def get_merge_request_notes(
         self,
@@ -478,6 +499,10 @@ class GitLabClient:
 
         Returns:
             评论列表
+
+        Raises:
+            GitLabNotFoundError: MR不存在
+            GitLabAPIError: 获取MR评论失败
         """
         try:
             project = self._client.projects.get(project_id)
@@ -491,9 +516,10 @@ class GitLabClient:
 
             return result
 
+        except GitlabGetError as e:
+            raise GitLabNotFoundError("MR不存在", f"项目: {project_id}, MR IID: {mr_iid}")
         except GitlabError as e:
-            logger.error(f"获取MR评论失败: {e}")
-            return []
+            raise GitLabAPIError("获取MR评论失败", f"项目: {project_id}, MR IID: {mr_iid}, 错误: {str(e)}")
 
     def delete_merge_request_note(
         self,
@@ -511,6 +537,10 @@ class GitLabClient:
 
         Returns:
             是否成功
+
+        Raises:
+            GitLabNotFoundError: MR或评论不存在
+            GitLabAPIError: 删除MR评论失败
         """
         try:
             project = self._client.projects.get(project_id)
@@ -520,9 +550,10 @@ class GitLabClient:
             logger.info(f"成功删除MR评论 {note_id}")
             return True
 
+        except GitlabGetError as e:
+            raise GitLabNotFoundError("MR或评论不存在", f"项目: {project_id}, MR IID: {mr_iid}, 评论ID: {note_id}")
         except GitlabError as e:
-            logger.error(f"删除MR评论失败: {e}")
-            return False
+            raise GitLabAPIError("删除MR评论失败", f"项目: {project_id}, MR IID: {mr_iid}, 评论ID: {note_id}, 错误: {str(e)}")
 
     def create_merge_request_discussion(
         self,
@@ -647,6 +678,10 @@ class GitLabClient:
 
         Returns:
             是否成功
+
+        Raises:
+            GitLabNotFoundError: MR不存在
+            GitLabAPIError: 批准MR失败
         """
         try:
             project = self._client.projects.get(project_id)
@@ -655,9 +690,10 @@ class GitLabClient:
             logger.info(f"成功批准MR {mr_iid}")
             return True
 
+        except GitlabGetError as e:
+            raise GitLabNotFoundError("MR不存在", f"项目: {project_id}, MR IID: {mr_iid}")
         except GitlabError as e:
-            logger.error(f"批准MR失败: {e}")
-            return False
+            raise GitLabAPIError("批准MR失败", f"项目: {project_id}, MR IID: {mr_iid}, 错误: {str(e)}")
 
     def unapprove_merge_request(
         self,
@@ -673,6 +709,10 @@ class GitLabClient:
 
         Returns:
             是否成功
+
+        Raises:
+            GitLabNotFoundError: MR不存在
+            GitLabAPIError: 取消批准MR失败
         """
         try:
             project = self._client.projects.get(project_id)
@@ -681,9 +721,10 @@ class GitLabClient:
             logger.info(f"成功取消批准MR {mr_iid}")
             return True
 
+        except GitlabGetError as e:
+            raise GitLabNotFoundError("MR不存在", f"项目: {project_id}, MR IID: {mr_iid}")
         except GitlabError as e:
-            logger.error(f"取消批准MR失败: {e}")
-            return False
+            raise GitLabAPIError("取消批准MR失败", f"项目: {project_id}, MR IID: {mr_iid}, 错误: {str(e)}")
 
 
 def parse_project_identifier(identifier: str) -> tuple[str, str | int]:

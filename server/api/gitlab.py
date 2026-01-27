@@ -19,6 +19,13 @@ from src.gitlab.client import GitLabClient
 from src.gitlab.models import MergeRequestInfo, DiffFile, ProjectInfo
 from src.core.database import DatabaseManager
 from src.core.auth import verify_token
+from src.core.exceptions import (
+    GitLabException,
+    GitLabConnectionError,
+    GitLabAuthError,
+    GitLabNotFoundError,
+    GitLabAPIError,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -265,8 +272,12 @@ async def connect_gitlab(
             user=user,
         )
 
-    except ValueError as e:
+    except GitLabAuthError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    except GitLabConnectionError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except GitLabException as e:
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         logger.error(f"连接 GitLab 失败: {e}")
         raise HTTPException(status_code=500, detail=f"连接失败: {str(e)}")
@@ -287,6 +298,8 @@ async def list_projects(
         )
         return [ProjectModel.from_info(p) for p in projects]
 
+    except GitLabException as e:
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         logger.error(f"列出项目失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -300,12 +313,12 @@ async def get_project(
     """获取项目详情"""
     try:
         project = client.get_project(project_id)
-        if not project:
-            raise HTTPException(status_code=404, detail="项目不存在")
         return ProjectModel.from_info(project)
 
-    except HTTPException:
-        raise
+    except GitLabNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except GitLabException as e:
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         logger.error(f"获取项目失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -325,6 +338,10 @@ async def list_merge_requests(
         )
         return [MRModel.from_info(m) for m in mrs]
 
+    except GitLabNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except GitLabException as e:
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         logger.error(f"列出 MR 失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -346,6 +363,8 @@ async def list_related_merge_requests(
             for mr, project in result
         ]
 
+    except GitLabException as e:
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         logger.error(f"列出相关 MR 失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -365,12 +384,12 @@ async def get_merge_request(
             mr_iid=mr_iid,
             include_diff=include_diff,
         )
-        if not mr:
-            raise HTTPException(status_code=404, detail="MR 不存在")
         return MRModel.from_info(mr)
 
-    except HTTPException:
-        raise
+    except GitLabNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except GitLabException as e:
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         logger.error(f"获取 MR 失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -390,6 +409,10 @@ async def get_merge_request_diffs(
         )
         return [DiffFileModel.from_file(d) for d in diffs]
 
+    except GitLabNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except GitLabException as e:
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         logger.error(f"获取 MR Diff 失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -421,6 +444,8 @@ async def get_merge_request_notes(
             })
         return result
 
+    except GitLabException as e:
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         logger.error(f"获取 MR 评论失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -458,8 +483,8 @@ async def create_merge_request_note(
         else:
             raise HTTPException(status_code=500, detail="发布评论失败")
 
-    except HTTPException:
-        raise
+    except GitLabException as e:
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         logger.error(f"创建 MR 评论失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -485,8 +510,8 @@ async def delete_merge_request_note(
         else:
             raise HTTPException(status_code=500, detail="删除评论失败")
 
-    except HTTPException:
-        raise
+    except GitLabException as e:
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         logger.error(f"删除 MR 评论失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -510,8 +535,8 @@ async def approve_merge_request(
         else:
             raise HTTPException(status_code=500, detail="批准失败")
 
-    except HTTPException:
-        raise
+    except GitLabException as e:
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         logger.error(f"批准 MR 失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -535,8 +560,8 @@ async def unapprove_merge_request(
         else:
             raise HTTPException(status_code=500, detail="取消批准失败")
 
-    except HTTPException:
-        raise
+    except GitLabException as e:
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         logger.error(f"取消批准 MR 失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))

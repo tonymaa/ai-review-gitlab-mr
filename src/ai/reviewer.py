@@ -8,6 +8,13 @@ from datetime import datetime
 from enum import Enum
 
 from ..gitlab.models import MergeRequestInfo, DiffFile, AIReviewResult
+from ..core.exceptions import (
+    AIConnectionError,
+    AIAuthError,
+    AIQuotaError,
+    AIModelNotFoundError,
+    AIException,
+)
 from .prompts import (
     SYSTEM_PROMPT,
     build_review_prompt,
@@ -161,6 +168,13 @@ class OpenAIReviewer(AIReviewer):
 
         Returns:
             (API响应文本, Token使用统计)
+
+        Raises:
+            AIConnectionError: 连接AI服务失败
+            AIAuthError: API密钥无效
+            AIQuotaError: 配额不足
+            AIModelNotFoundError: 模型不存在
+            AIException: 其他AI错误
         """
         kwargs = {
             "model": self.model,
@@ -202,9 +216,22 @@ class OpenAIReviewer(AIReviewer):
             )
 
             return "".join(full_content), usage
+
         except Exception as e:
-            logger.error(f"OpenAI API调用失败: {e}")
-            raise
+            error_str = str(e).lower()
+            error_msg = str(e)
+
+            # 根据错误类型抛出相应的异常
+            if "authentication" in error_str or "unauthorized" in error_str or "401" in error_str:
+                raise AIAuthError("OpenAI API认证失败", "请检查API密钥是否正确")
+            elif "quota" in error_str or "429" in error_str or "limit" in error_str:
+                raise AIQuotaError("OpenAI API配额不足", "请检查账户余额或使用限制")
+            elif "model" in error_str and "not found" in error_str:
+                raise AIModelNotFoundError("模型不存在", f"模型: {self.model}")
+            elif "connection" in error_str or "timeout" in error_str:
+                raise AIConnectionError("连接OpenAI服务失败", error_msg)
+            else:
+                raise AIException("AI审查失败", error_msg)
 
     def review_merge_request(
         self,
