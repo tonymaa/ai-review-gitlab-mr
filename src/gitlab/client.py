@@ -726,6 +726,102 @@ class GitLabClient:
         except GitlabError as e:
             raise GitLabAPIError("取消批准MR失败", f"项目: {project_id}, MR IID: {mr_iid}, 错误: {str(e)}")
 
+    def get_merge_request_approval_state(
+        self,
+        project_id: str | int,
+        mr_iid: int,
+    ) -> dict:
+        """
+        获取Merge Request的批准状态
+
+        Args:
+            project_id: 项目ID或路径
+            mr_iid: MR的IID
+
+        Returns:
+            批准状态字典，包含:
+            - approved: 是否已批准
+            - approved_by: 批准者列表
+            - approvers_required: 需要的批准者数量
+            - approvals_left: 还需要的批准数量
+
+        Raises:
+            GitLabNotFoundError: MR不存在
+            GitLabAPIError: 获取批准状态失败
+        """
+        try:
+            project = self._client.projects.get(project_id)
+            mr = project.mergerequests.get(mr_iid)
+            approval = mr.approvals.get()
+
+            # 提取批准者信息
+            approved_by = []
+            if hasattr(approval, 'approved_by') and approval.approved_by:
+                logger.debug(f"approved_by 类型: {type(approval.approved_by)}")
+                logger.debug(f"approved_by 内容: {approval.approved_by}")
+
+                for approver in approval.approved_by:
+                    # approver 可能是对象或字典
+                    user_data = None
+
+                    if hasattr(approver, 'user'):
+                        # nested user object
+                        user = approver.user
+                        user_data = {
+                            "id": user.id if hasattr(user, 'id') else None,
+                            "name": user.name if hasattr(user, 'name') else None,
+                            "username": user.username if hasattr(user, 'username') else None,
+                            "avatar_url": user.avatar_url if hasattr(user, 'avatar_url') else None,
+                        }
+                    elif hasattr(approver, 'id'):
+                        # direct user object
+                        user_data = {
+                            "id": approver.id,
+                            "name": getattr(approver, 'name', None),
+                            "username": getattr(approver, 'username', None),
+                            "avatar_url": getattr(approver, 'avatar_url', None),
+                        }
+                    elif isinstance(approver, dict):
+                        # dict form - check for nested user
+                        if 'user' in approver:
+                            user_dict = approver['user']
+                        else:
+                            user_dict = approver
+                        user_data = {
+                            "id": user_dict.get('id'),
+                            "name": user_dict.get('name'),
+                            "username": user_dict.get('username'),
+                            "avatar_url": user_dict.get('avatar_url'),
+                        }
+
+                    if user_data and user_data.get('id') is not None:
+                        approved_by.append(user_data)
+
+            logger.debug(f"解析后的批准者列表: {approved_by}")
+
+            # 获取当前用户是否已批准
+            user_approved = approval.user_has_approved if hasattr(approval, 'user_has_approved') else False
+
+            # 获取批准规则
+            approvers_required = 0
+            approvals_left = 0
+            if hasattr(approval, 'approvers'):
+                approvers_required = len(approval.approvers) if approval.approvers else 0
+            if hasattr(approval, 'approvals_left'):
+                approvals_left = approval.approvals_left
+
+            return {
+                "approved": user_approved,
+                "approved_by": approved_by,
+                "approvers_required": approvers_required,
+                "approvals_left": approvals_left,
+            }
+
+        except GitlabGetError as e:
+            raise GitLabNotFoundError("MR不存在", f"项目: {project_id}, MR IID: {mr_iid}")
+        except GitlabError as e:
+            raise GitLabAPIError("获取批准状态失败", f"项目: {project_id}, MR IID: {mr_iid}, 错误: {str(e)}")
+
 
 def parse_project_identifier(identifier: str) -> tuple[str, str | int]:
     """

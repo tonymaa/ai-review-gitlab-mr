@@ -18,6 +18,7 @@ import {
 import type { Note, ReviewComment } from '../types'
 import { api } from '../api/client'
 import { useApp } from '../contexts/AppContext'
+import MRDetail from './MRDetail'
 
 const { TextArea } = Input
 const { Text, Paragraph } = Typography
@@ -473,6 +474,15 @@ const CommentPanel: FC<CommentPanelProps> = () => {
       display: 'flex',
       flexDirection: 'column',
     }}>
+      {/* MR 详情 */}
+      {currentMR && currentProject && (
+        <MRDetail
+          project_id={currentProject.id.toString()}
+          mr={currentMR}
+          onRefresh={loadNotes}
+        />
+      )}
+
       {/* 头部：输入框和操作 */}
       <div style={{ padding: '12px', borderBottom: '1px solid #303030' }}>
         <TextArea

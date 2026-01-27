@@ -228,6 +228,16 @@ class APIClient {
     return response.data;
   }
 
+  async getMergeRequestApprovalState(projectId: string, mrIid: number): Promise<{
+    approved: boolean;
+    approved_by: Array<{ id: number; name: string; username: string; avatar_url?: string }>;
+    approvers_required: number;
+    approvals_left: number;
+  }> {
+    const response = await this.client.get(`/gitlab/projects/${projectId}/merge-requests/${mrIid}/approval-state`);
+    return response.data;
+  }
+
   async listRelatedMergeRequests(state: 'opened' | 'closed' | 'merged' | 'all' = 'opened'): Promise<RelatedMR[]> {
     const response = await this.client.get('/gitlab/merge-requests/related', {
       params: { state },

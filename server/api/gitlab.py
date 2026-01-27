@@ -578,3 +578,24 @@ async def unapprove_merge_request(
     except Exception as e:
         logger.error(f"取消批准 MR 失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/projects/{project_id}/merge-requests/{mr_iid}/approval-state")
+async def get_merge_request_approval_state(
+    project_id: str,
+    mr_iid: int,
+    client: GitLabClient = Depends(get_gitlab_client),
+):
+    """获取 Merge Request 的批准状态"""
+    try:
+        approval_state = client.get_merge_request_approval_state(
+            project_id=project_id,
+            mr_iid=mr_iid,
+        )
+        return approval_state
+
+    except GitLabException as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        logger.error(f"获取 MR 批准状态失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
