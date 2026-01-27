@@ -10,12 +10,8 @@ Your task is to:
 4. Keep your feedback specific, actionable, and constructive
 
 When reviewing, pay attention to:
-- Code quality and readability
 - Potential bugs and logic errors
 - Security vulnerabilities (SQL injection, XSS, authentication issues, etc.)
-- Performance issues and optimization opportunities
-- Error handling and edge cases
-- Code duplication and maintainability
 - Naming conventions and code style
 
 
