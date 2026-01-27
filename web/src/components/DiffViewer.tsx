@@ -37,7 +37,7 @@ const DiffViewer: FC<DiffViewerProps> = ({
   selectedFile,
   onSelectFile,
 }) => {
-  const { setCurrentDiffFile, highlightLine, setHighlightLine, currentProject, currentMR } = useApp()
+  const { setCurrentDiffFile, highlightLine, setHighlightLine, currentProject, currentMR, setNotes } = useApp()
   const diffContainerRef = useRef<HTMLDivElement>(null)
 
   // 行内评论状态
@@ -116,6 +116,17 @@ const DiffViewer: FC<DiffViewerProps> = ({
         message.success('评论已发布')
         setCommentInput('')
         setCommentLineId(null)
+
+        // 重新加载评论列表
+        try {
+          const notes = await api.getMergeRequestNotes(
+            currentProject.id.toString(),
+            currentMR.iid
+          )
+          setNotes(notes)
+        } catch (loadErr) {
+          console.error('重新加载评论失败:', loadErr)
+        }
       } catch (err) {
         const error = err as { response?: { data?: { detail?: string } } }
         message.error(error.response?.data?.detail || '发送评论失败')
