@@ -433,7 +433,7 @@ class CodeDiffViewer(QTextEdit):
 
     def jump_to_line(self, line_number: int):
         """
-        跳转到指定行号
+        跳转到指定行号（优先跳转到新增/删除行）
 
         Args:
             line_number: 目标行号
@@ -443,21 +443,35 @@ class CodeDiffViewer(QTextEdit):
         block = document.begin()
         block_number = 0
 
+        # 第一遍：优先查找新增或删除行
+        change_block = None
+        any_block = None
+
         while block.isValid():
             if block_number in self.line_info:
                 old_line, new_line, line_type = self.line_info[block_number]
                 # 检查是否匹配目标行号
                 if new_line == line_number or old_line == line_number:
-                    # 找到了，滚动到该位置
-                    cursor = QTextCursor(block)
-                    self.setTextCursor(cursor)
-                    # 手动滚动使该行居中
-                    self._center_cursor_on_line(cursor.block())
-                    # 高亮显示该行
-                    self._highlight_line(cursor)
-                    return
+                    # 保存第一个匹配的行（作为后备）
+                    if any_block is None:
+                        any_block = block
+                    # 如果是新增或删除行，优先使用
+                    if line_type in ("addition", "deletion") and change_block is None:
+                        change_block = block
+                        break  # 找到变更行，直接退出
             block = block.next()
             block_number += 1
+
+        # 使用找到的块（优先变更行，否则使用任意匹配行）
+        target_block = change_block or any_block
+
+        if target_block:
+            cursor = QTextCursor(target_block)
+            self.setTextCursor(cursor)
+            # 手动滚动使该行居中
+            self._center_cursor_on_line(cursor.block())
+            # 高亮显示该行
+            self._highlight_line(cursor)
 
     def _center_cursor_on_line(self, block):
         """手动滚动使指定块居中"""
