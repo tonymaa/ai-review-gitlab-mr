@@ -100,7 +100,6 @@ const Header: FC<HeaderProps> = ({ onOpenConnect, onOpenConfig, onOpenRelatedMR 
                 <Text style={{ color: currentProject ? '#fff' : '#888' }}>
                   {currentProject?.name || '选择项目'}
                 </Text>
-                <DownOutlined style={{ fontSize: 10, color: '#888' }} />
               </div>
             </>
           )}

@@ -114,22 +114,22 @@ const MRListPanel: FC<MRListPanelProps> = ({
             disabled={!currentProject}
           >
             <Option value="opened">
-              <Badge count={getStateCount('opened')} showZero>
-                打开中
+              <Badge offset={[22, 5]} size='small' count={getStateCount('opened')} showZero>
+                  Opened
               </Badge>
             </Option>
             <Option value="merged">
-              <Badge count={getStateCount('merged')} showZero>
-                已合并
+              <Badge offset={[22, 5]} size='small' count={getStateCount('merged')} showZero>
+                Merged
               </Badge>
             </Option>
             <Option value="closed">
-              <Badge count={getStateCount('closed')} showZero>
-                已关闭
+              <Badge offset={[22, 5]} size='small' count={getStateCount('closed')} showZero>
+                Closed
               </Badge>
             </Option>
             <Option value="all">
-              <Badge count={mergeRequests.length} showZero>
+              <Badge offset={[22, 5]} size='small' count={mergeRequests.length} showZero>
                 全部
               </Badge>
             </Option>
