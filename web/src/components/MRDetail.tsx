@@ -3,12 +3,14 @@
  */
 
 import { FC, useEffect, useState } from 'react'
-import { Card, Tag, Space, Typography, Button, message, Spin } from 'antd'
+import { Card, Tag, Space, Typography, Button, message, Spin, Tooltip } from 'antd'
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
   SyncOutlined,
   ClockCircleOutlined,
+  LinkOutlined,
+  ExportOutlined,
 } from '@ant-design/icons'
 import type { MergeRequest } from '../types'
 import { api } from '../api/client'
@@ -70,6 +72,19 @@ const MRDetail: FC<MRDetailProps> = ({ project_id, mr, onRefresh }) => {
     }
   }
 
+  const handleCopyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(mr.web_url)
+      message.success('链接已复制到剪贴板')
+    } catch {
+      message.error('复制失败')
+    }
+  }
+
+  const handleOpenGitLab = () => {
+    window.open(mr.web_url, '_blank')
+  }
+
   const getStateIcon = () => {
     switch (mr.state) {
       case 'opened':
@@ -123,8 +138,26 @@ const MRDetail: FC<MRDetailProps> = ({ project_id, mr, onRefresh }) => {
     <Card
       size="small"
       style={{ margin: '8px', borderRadius: 4 }}
-      styles={{ body: { padding: '12px' } }}
+      styles={{ body: { padding: '12px', position: 'relative' } }}
     >
+      {/* 右上角按钮 */}
+      <Space style={{ position: 'absolute', top: '12px', right: '12px' }}>
+        <Tooltip title="复制链接">
+          <Button
+            size="small"
+            icon={<LinkOutlined />}
+            onClick={handleCopyLink}
+          />
+        </Tooltip>
+        <Tooltip title="在 GitLab 中打开">
+          <Button
+            size="small"
+            icon={<ExportOutlined />}
+            onClick={handleOpenGitLab}
+          />
+        </Tooltip>
+      </Space>
+
       {/* 标题和状态 */}
       <div style={{ marginBottom: 8 }}>
         <Space size="small" wrap>
