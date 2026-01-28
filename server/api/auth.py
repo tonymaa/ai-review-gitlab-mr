@@ -170,11 +170,8 @@ async def register(request: RegisterRequest, db: DatabaseManager = Depends(get_d
         注册响应，包含用户信息和 token
     """
     try:
-        # 创建用户
-        user = db.create_user(request.username, request.password)
-
-        # 获取用户数据
-        user_data = db.get_user_data(user.id)
+        # 创建用户 - create_user 已经返回 user_data 字典
+        user_data = db.create_user(request.username, request.password)
 
         # 生成 token
         token_data = {
