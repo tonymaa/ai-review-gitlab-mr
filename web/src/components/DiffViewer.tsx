@@ -181,7 +181,13 @@ const DiffViewer: FC<DiffViewerProps> = ({
           fontSize: 13,
           lineHeight: '20px',
           whiteSpace: 'pre',
-          backgroundColor: isHighlighted ? '#ffec3d26' : 'transparent',
+          backgroundColor: isHighlighted
+            ? '#ffec3d26'
+            : line.type === 'addition'
+              ? 'rgba(82, 196, 26, 0.15)'
+              : line.type === 'deletion'
+                ? 'rgba(255, 77, 79, 0.15)'
+                : 'transparent',
           position: 'relative',
         }}
         onMouseEnter={(e) => {
@@ -206,6 +212,9 @@ const DiffViewer: FC<DiffViewerProps> = ({
           <div
             className="comment-icon-area"
             style={{
+              position: 'absolute',
+              left: '-5px',
+              top: '1px',
               width: 30,
               display: 'flex',
               alignItems: 'center',
