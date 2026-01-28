@@ -80,6 +80,7 @@ export interface MergeRequest {
   web_url: string;
   created_at: string;
   updated_at: string;
+  user_notes_count: number;
   approved_by_current_user: boolean;
   assignees: Array<{ id: number; name: string; avatar_url?: string }>;
   reviewers: Array<{ id: number; name: string; avatar_url?: string }>;

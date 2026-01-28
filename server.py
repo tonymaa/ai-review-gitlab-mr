@@ -38,8 +38,8 @@ def main():
     parser.add_argument(
         "--port",
         type=int,
-        default=8000,
-        help="绑定的端口 (默认: 8000)"
+        default=19000,
+        help="绑定的端口 (默认: 19000)"
     )
     parser.add_argument(
         "--reload",

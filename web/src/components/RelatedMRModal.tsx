@@ -9,6 +9,7 @@ import {
   CloseCircleOutlined,
   ClockCircleOutlined,
   MergeCellsOutlined,
+  MessageOutlined,
 } from '@ant-design/icons'
 import type { RelatedMR, MergeRequest } from '../types'
 import { api } from '../api/client'
@@ -158,12 +159,32 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
                 }
                 description={
                   <Space direction="vertical" size={0}>
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                      {item.project?.name || 'Unknown'} · !{item.mr.iid}
-                    </Text>
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                      {item.mr.source_branch} → {item.mr.target_branch}
-                    </Text>
+                    <Space size={4}>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        {item.mr.author_name}
+                      </Text>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        ·
+                      </Text>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        {item.project?.name || 'Unknown'}
+                      </Text>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        · !{item.mr.iid}
+                      </Text>
+                    </Space>
+                    <Space size={4}>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        {item.mr.source_branch} → {item.mr.target_branch}
+                      </Text>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        ·
+                      </Text>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        <MessageOutlined style={{ marginRight: 2 }} />
+                        {item.mr.user_notes_count}
+                      </Text>
+                    </Space>
                   </Space>
                 }
               />

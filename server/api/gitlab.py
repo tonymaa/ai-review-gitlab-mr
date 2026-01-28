@@ -149,6 +149,7 @@ class MRModel(BaseModel):
     web_url: str
     created_at: str
     updated_at: str
+    user_notes_count: int = 0
     approved_by_current_user: bool = False
     assignees: list[dict] = []
     reviewers: list[dict] = []
@@ -187,6 +188,7 @@ class MRModel(BaseModel):
             web_url=info.web_url or "",
             created_at=created_at_str,
             updated_at=updated_at_str,
+            user_notes_count=info.user_notes_count,
             approved_by_current_user=getattr(info, 'approved_by_current_user', False),
             assignees=assignees_list,
             reviewers=reviewers_list,
