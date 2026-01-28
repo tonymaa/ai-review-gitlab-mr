@@ -356,9 +356,11 @@ const CommentPanel: FC<CommentPanelProps> = () => {
           <span style={{ flex: 1 }}>
             {formatSystemNote(note.body, note.author_name)}
           </span>
-          <span style={{ fontSize: 11, color: '#666' }}>
-            {formatTimeAgo(note.created_at)}
-          </span>
+          <Tooltip title={formatFullTime(note.created_at)}>
+            <span style={{ fontSize: 11, color: '#666' }}>
+              {formatTimeAgo(note.created_at)}
+            </span>
+          </Tooltip>
         </div>
       )
     }
