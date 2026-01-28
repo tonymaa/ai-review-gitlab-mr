@@ -366,65 +366,74 @@ const CommentPanel: FC<CommentPanelProps> = () => {
     const canJump = note.file_path && note.line_number
 
     return (
-      <List.Item key={note.id}>
-        <List.Item.Meta
-          avatar={
-            <Avatar
-              src={note.author_avatar}
-              icon={<UserOutlined />}
-              size="small"
-            />
-          }
-          title={
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', width: '100%', flexDirection: 'column' }}>
-              <Space>
-                <Text strong>{note.author_name}</Text>
-                <Tooltip title={formatFullTime(note.created_at)}>
-                  <Text type="secondary" style={{ fontSize: 12 }}>
-                    {formatTimeAgo(note.created_at)}
-                  </Text>
-                </Tooltip>
-              </Space>
-              {canJump && (
-                <Space size={4} style={{ flexShrink: 0 }}>
-                  <Text type="secondary" style={{ fontSize: 12 }}>
-                    {note.file_path}:{note.line_number}
-                  </Text>
-                  <Button
-                    type="link"
-                    size="small"
-                    icon={<ArrowRightOutlined />}
-                    onClick={() => jumpToLine(note.file_path!, note.line_number!)}
-                    style={{ padding: 0, fontSize: 12 }}
-                  >
-                    跳转
-                  </Button>
-                </Space>
-              )}
-            </div>
-          }
-          description={
-            <div>
-              <Paragraph
-                style={{ marginBottom: 8, whiteSpace: 'pre-wrap' }}
-                ellipsis={{ rows: 6, expandable: true, symbol: '展开' }}
+      <div key={note.id} style={{
+        padding: '12px',
+        margin: '8px 0',
+        background: '#2a2a2a',
+        borderRadius: 4,
+        fontSize: 12,
+        border: '1px solid #3a3a3a',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '8px'
+      }}>
+        {/* 头部：作者信息和时间 */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Avatar
+            src={note.author_avatar}
+            icon={<UserOutlined />}
+            size="small"
+          />
+          <Text strong style={{ fontSize: 13, color: '#ddd' }}>{note.author_name}</Text>
+          <Tooltip title={formatFullTime(note.created_at)}>
+            <Text type="secondary" style={{ fontSize: 11, color: '#999' }}>
+              {formatTimeAgo(note.created_at)}
+            </Text>
+          </Tooltip>
+        </div>
+
+        {/* 评论内容 */}
+        <Paragraph
+          style={{
+            fontSize: 13,
+            color: '#d9d9d9',
+            marginBottom: 0
+          }}
+          ellipsis={{ rows: 3, expandable: 'collapsible' }}
+        >
+          {note.body}
+        </Paragraph>
+
+        {/* 底部：文件位置和操作按钮 */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          {canJump && (
+            <Space size={4}>
+              <Text type="secondary" style={{ fontSize: 11, color: '#999' }}>
+                {note.file_path}:{note.line_number}
+              </Text>
+              <Button
+                type="link"
+                size="small"
+                icon={<ArrowRightOutlined />}
+                onClick={() => jumpToLine(note.file_path!, note.line_number!)}
+                style={{ padding: 0, fontSize: 11, color: '#999' }}
               >
-                {note.body}
-              </Paragraph>
-              <Space>
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<DeleteOutlined />}
-                  onClick={() => handleDeleteNote(note.id)}
-                >
-                  删除
-                </Button>
-              </Space>
-            </div>
-          }
-        />
-      </List.Item>
+                跳转
+              </Button>
+            </Space>
+          )}
+          <Button
+            type="text"
+            size="small"
+            icon={<DeleteOutlined />}
+            onClick={() => handleDeleteNote(note.id)}
+            danger
+            style={{ fontSize: 11 }}
+          >
+            删除
+          </Button>
+        </div>
+      </div>
     )
   }
 
