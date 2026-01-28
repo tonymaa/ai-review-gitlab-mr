@@ -160,18 +160,15 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
                 description={
                   <Space direction="vertical" size={0}>
                     <Space size={4}>
-                      <Text type="secondary" style={{ fontSize: 12 }}>
+                      <Tag color="blue" style={{ fontSize: 11, margin: 0 }}>
                         {item.mr.author_name}
-                      </Text>
-                      <Text type="secondary" style={{ fontSize: 12 }}>
-                        ·
-                      </Text>
-                      <Text type="secondary" style={{ fontSize: 12 }}>
+                      </Tag>
+                      <Tag color="purple" style={{ fontSize: 11, margin: 0 }}>
                         {item.project?.name || 'Unknown'}
-                      </Text>
-                      <Text type="secondary" style={{ fontSize: 12 }}>
-                        · !{item.mr.iid}
-                      </Text>
+                      </Tag>
+                      <Tag style={{ fontSize: 11, margin: 0 }}>
+                        !{item.mr.iid}
+                      </Tag>
                     </Space>
                     <Space size={4}>
                       <Text type="secondary" style={{ fontSize: 12 }}>
