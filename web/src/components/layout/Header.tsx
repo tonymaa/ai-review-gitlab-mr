@@ -157,16 +157,6 @@ const Header: FC<HeaderProps> = ({ onOpenConnect, onOpenConfig, onOpenRelatedMR 
 
         {/* 右侧：操作按钮 */}
         <Space size="small">
-          <Tooltip title="GitHub">
-            <a
-              href="https://github.com/tonymaa/ai-review-gitlab-mr"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ color: 'var(--text-primary)' }}
-            >
-              <Button type="text" icon={<GithubOutlined />} size="small" />
-            </a>
-          </Tooltip>
           {!isConnected && (
             <Button type="primary" size="small" onClick={onOpenConnect}>
               连接 GitLab
@@ -201,6 +191,17 @@ const Header: FC<HeaderProps> = ({ onOpenConnect, onOpenConfig, onOpenRelatedMR 
             />
           </Tooltip>
           */}
+
+          <Tooltip title="GitHub">
+            <a
+              href="https://github.com/tonymaa/ai-review-gitlab-mr"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: 'var(--text-primary)' }}
+            >
+              <Button type="text" icon={<GithubOutlined />} size="small" />
+            </a>
+          </Tooltip>
 
           {isConnected && (
               <Button
