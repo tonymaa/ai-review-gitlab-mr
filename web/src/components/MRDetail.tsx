@@ -141,9 +141,9 @@ const MRDetail: FC<MRDetailProps> = ({ project_id, mr, onRefresh }) => {
           <Text type="secondary">
             {mr.author_name} requested to merge
           </Text>
-          <Tag color="cyan">{mr.source_branch}</Tag>
+          <Tag color="cyan" style={{whiteSpace: "normal"}}>{mr.source_branch}</Tag>
           <Text type="secondary">into</Text>
-          <Tag color="geekblue">{mr.target_branch}</Tag>
+          <Tag color="geekblue" style={{whiteSpace: "normal"}}>{mr.target_branch}</Tag>
           <Text type="secondary">
             <ClockCircleOutlined style={{ marginRight: 4 }} />
             {formatTimeAgo(mr.created_at)}
@@ -158,8 +158,9 @@ const MRDetail: FC<MRDetailProps> = ({ project_id, mr, onRefresh }) => {
             marginBottom: 8,
             fontSize: 12,
             color: '#d9d9d9',
+            whiteSpace: 'pre'
           }}
-          ellipsis={{ rows: 2, expandable: true, symbol: '展开' }}
+          ellipsis={{ rows: 1, expandable: 'collapsible' }}
         >
           {mr.description}
         </Paragraph>
