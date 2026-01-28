@@ -613,16 +613,57 @@ const DiffViewer: FC<DiffViewerProps> = ({
 
             {/* Diff 行 */}
             <div>
-              {diffLines.map((line, index) => {
-                const lineComments = getAICommentsForLine(line.newNumber || line.oldNumber)
-                return (
-                  <div key={index}>
-                    {renderLine(line, index)}
-                    {/* AI 评论 */}
-                    {lineComments.length > 0 && lineComments.map(renderAIComment)}
-                  </div>
-                )
-              })}
+              {(() => {
+                // 跟踪已经渲染的 AI 评论，确保每条评论只显示一次
+                const renderedComments = new Set<string>()
+                // 存储：行索引 -> 需要渲染的评论列表
+                const commentsByLineIndex = new Map<number, ReviewComment[]>()
+
+                // 第一遍历：优先将评论分配给新增行
+                aiComments.forEach(comment => {
+                  const commentKey = `${comment.file_path}-${comment.line_number}-${comment.content.slice(0, 20)}`
+                  if (renderedComments.has(commentKey)) return
+
+                  // 优先在新增行中查找匹配的行号
+                  const additionLineIndex = diffLines.findIndex(line =>
+                    line.type === 'addition' && line.newNumber === comment.line_number
+                  )
+
+                  if (additionLineIndex !== -1) {
+                    // 找到新增行，分配评论
+                    if (!commentsByLineIndex.has(additionLineIndex)) {
+                      commentsByLineIndex.set(additionLineIndex, [])
+                    }
+                    commentsByLineIndex.get(additionLineIndex)!.push(comment)
+                    renderedComments.add(commentKey)
+                  } else {
+                    // 如果没有新增行匹配，尝试在删除行中查找
+                    const deletionLineIndex = diffLines.findIndex(line =>
+                      line.type === 'deletion' && line.oldNumber === comment.line_number
+                    )
+                    if (deletionLineIndex !== -1) {
+                      if (!commentsByLineIndex.has(deletionLineIndex)) {
+                        commentsByLineIndex.set(deletionLineIndex, [])
+                      }
+                      commentsByLineIndex.get(deletionLineIndex)!.push(comment)
+                      renderedComments.add(commentKey)
+                    }
+                  }
+                })
+
+                // 第二遍历：渲染 diff 行和对应的 AI 评论
+                return diffLines.map((line, index) => {
+                  const lineComments = commentsByLineIndex.get(index) || []
+
+                  return (
+                    <div key={index}>
+                      {renderLine(line, index)}
+                      {/* AI 评论 */}
+                      {lineComments.length > 0 && lineComments.map(renderAIComment)}
+                    </div>
+                  )
+                })
+              })()}
             </div>
           </div>
         )}
