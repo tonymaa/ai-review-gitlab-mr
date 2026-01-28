@@ -613,7 +613,7 @@ const CommentPanel: FC<CommentPanelProps> = () => {
                 </Space>
               ),
               children: (
-                <div style={{ height: '100%', overflowY: 'auto', overflowX: 'hidden' }}>
+                <div style={{ height: '100%', overflowY: 'auto', overflowX: 'hidden', padding: '0 6px' }}>
                   <Spin spinning={loading}>
                     {notes.length === 0 ? (
                       <Empty
