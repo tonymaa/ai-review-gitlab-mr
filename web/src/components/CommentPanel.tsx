@@ -209,7 +209,11 @@ const CommentPanel: FC<CommentPanelProps> = () => {
         currentDiffFile.new_path
       )
 
-      setAiComments(result.comments)
+      // 只移除当前文件的旧评论，添加新评论，保留其他文件的评论
+      setAiComments([
+        ...aiComments.filter(c => c.file_path !== currentDiffFile!.new_path),
+        ...result.comments
+      ])
       message.success(`AI 审查完成，生成 ${result.comments.length} 条评论`)
     } catch (err: any) {
       message.error(err.response?.data?.detail || 'AI 审查失败')
