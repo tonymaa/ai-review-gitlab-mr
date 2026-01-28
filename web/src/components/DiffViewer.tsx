@@ -68,6 +68,38 @@ const DiffViewer: FC<DiffViewerProps> = ({
   } | null>(null)
   const [sendingAIComment, setSendingAIComment] = useState<string | null>(null)
 
+  // AI 审查状态
+  const [reviewingFile, setReviewingFile] = useState<string | null>(null)
+
+  // AI 审查当前文件
+  const handleReviewFile = async (file: DiffFile) => {
+    if (!currentProject || !currentMR) {
+      message.warning('请先选择一个 MR')
+      return
+    }
+
+    setReviewingFile(file.new_path)
+    try {
+      const result = await api.reviewSingleFile(
+        currentProject.id.toString(),
+        currentMR.iid,
+        file.new_path
+      )
+
+      // 只移除当前文件的旧评论，添加新评论，保留其他文件的评论
+      setAiComments([
+        ...aiComments.filter(c => c.file_path !== file.new_path),
+        ...result.comments
+      ])
+      message.success(`AI 审查完成，生成 ${result.comments.length} 条评论`)
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { detail?: string } } }
+      message.error(error.response?.data?.detail || 'AI 审查失败')
+    } finally {
+      setReviewingFile(null)
+    }
+  }
+
   // 当高亮行变化时，滚动到对应行
   useEffect(() => {
     if (highlightLine && diffFile && diffFile.new_path === highlightLine.filePath && diffContainerRef.current) {
@@ -530,6 +562,8 @@ const DiffViewer: FC<DiffViewerProps> = ({
                 padding: '8px 12px',
                 cursor: 'pointer',
                 background: selectedFile?.new_path === file.new_path ? '#1677ff20' : 'transparent',
+                display: 'flex',
+                alignItems: 'center',
               }}
               onClick={() => onSelectFile(file)}
             >
@@ -561,6 +595,19 @@ const DiffViewer: FC<DiffViewerProps> = ({
                   </Text>
                 }
               />
+              <Button
+                type="primary"
+                size="small"
+                icon={<RobotOutlined />}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleReviewFile(file)
+                }}
+                loading={reviewingFile === file.new_path}
+                style={{ fontSize: 11, marginLeft: 8 }}
+              >
+                AI 审查
+              </Button>
             </List.Item>
           )}
         />

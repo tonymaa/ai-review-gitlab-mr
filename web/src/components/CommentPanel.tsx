@@ -195,33 +195,6 @@ const CommentPanel: FC<CommentPanelProps> = () => {
     }
   }
 
-  const handleAIReviewCurrentFile = async () => {
-    if (!currentMR || !currentProject || !currentDiffFile) {
-      message.warning('请先选择一个 MR 和文件')
-      return
-    }
-
-    setAiReviewing(true)
-    try {
-      const result = await api.reviewSingleFile(
-        currentProject.id.toString(),
-        currentMR.iid,
-        currentDiffFile.new_path
-      )
-
-      // 只移除当前文件的旧评论，添加新评论，保留其他文件的评论
-      setAiComments([
-        ...aiComments.filter(c => c.file_path !== currentDiffFile!.new_path),
-        ...result.comments
-      ])
-      message.success(`AI 审查完成，生成 ${result.comments.length} 条评论`)
-    } catch (err: any) {
-      message.error(err.response?.data?.detail || 'AI 审查失败')
-    } finally {
-      setAiReviewing(false)
-    }
-  }
-
   // 开始编辑 AI 评论
   const handleStartEditAIComment = (index: number, content: string) => {
     setEditingAIComment({ index, content })
@@ -515,15 +488,6 @@ const CommentPanel: FC<CommentPanelProps> = () => {
             size="small"
           >
             AI 审查全部文件
-          </Button>
-          <Button
-            icon={<RobotOutlined />}
-            onClick={handleAIReviewCurrentFile}
-            loading={aiReviewing}
-            disabled={!currentDiffFile}
-            size="small"
-          >
-            AI 审查当前文件
           </Button>
         </Space>
       </div>
