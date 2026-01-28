@@ -3,7 +3,7 @@
  */
 
 import { FC, useState, useEffect } from 'react'
-import { List, Avatar, Input, Button, Space, Typography, Tag, Empty, Spin, Tabs, Divider, message, Modal } from 'antd'
+import { List, Avatar, Input, Button, Space, Typography, Tag, Empty, Spin, Tabs, Divider, message, Modal, Tooltip } from 'antd'
 import {
   MessageOutlined,
   SendOutlined,
@@ -48,6 +48,42 @@ const CommentPanel: FC<CommentPanelProps> = () => {
   const [activeTab, setActiveTab] = useState('comments')
   const [editingAIComment, setEditingAIComment] = useState<{ index: number; content: string } | null>(null)
   const [sendingAIComment, setSendingAIComment] = useState<number | null>(null)
+
+  // 格式化完整时间为中国习惯格式
+  const formatFullTime = (dateString: string) => {
+    const date = new Date(dateString)
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    const hours = String(date.getHours()).padStart(2, '0')
+    const minutes = String(date.getMinutes()).padStart(2, '0')
+    const seconds = String(date.getSeconds()).padStart(2, '0')
+    return `${year}/${month}/${day} ${hours}:${minutes}:${seconds}`
+  }
+
+  // 格式化相对时间
+  const formatTimeAgo = (dateString: string) => {
+    const date = new Date(dateString)
+    const now = new Date()
+    const seconds = Math.floor((now.getTime() - date.getTime()) / 1000)
+
+    const intervals = {
+      年: 31536000,
+      月: 2592000,
+      周: 604800,
+      天: 86400,
+      小时: 3600,
+      分钟: 60,
+    }
+
+    for (const [unit, secondsInUnit] of Object.entries(intervals)) {
+      const interval = Math.floor(seconds / secondsInUnit)
+      if (interval >= 1) {
+        return `${interval} ${unit}前`
+      }
+    }
+    return '刚刚'
+  }
 
   // 当 MR 变化时加载评论
   useEffect(() => {
@@ -275,7 +311,58 @@ const CommentPanel: FC<CommentPanelProps> = () => {
 
   const renderNote = (note: Note) => {
     console.log("note>>", note);
-    
+
+    // System 类型的评论显示为系统活动样式
+    if (note.system) {
+      // 解析并格式化 system 评论内容
+      const formatSystemNote = (body: string, authorName: string) => {
+        // 检查 body 是否以 author_name 开头，如果是则去掉
+        let content = body
+        if (content.startsWith(authorName)) {
+          content = content.slice(authorName.length).trim()
+        }
+
+        // 处理 @username 格式
+        const parts = content.split(/(@[\w-]+)/g)
+        const formattedParts = parts.map((part, index) => {
+          if (part.startsWith('@')) {
+            return <Tag key={index} color="blue" style={{ fontSize: 11, margin: '0 2px' }}>{part}</Tag>
+          }
+          return part
+        })
+
+        return (
+          <>
+            <Text strong style={{ color: '#ccc' }}>{authorName}</Text>
+            {' '}
+            {formattedParts}
+          </>
+        )
+      }
+
+      return (
+        <div key={note.id} style={{
+          padding: '8px 12px',
+          margin: '8px 0',
+          background: '#2a2a2a',
+          borderRadius: 4,
+          fontSize: 12,
+          color: '#999',
+          border: '1px solid #3a3a3a',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px'
+        }}>
+          <span style={{ flex: 1 }}>
+            {formatSystemNote(note.body, note.author_name)}
+          </span>
+          <span style={{ fontSize: 11, color: '#666' }}>
+            {formatTimeAgo(note.created_at)}
+          </span>
+        </div>
+      )
+    }
+
     const canJump = note.file_path && note.line_number
 
     return (
@@ -292,9 +379,11 @@ const CommentPanel: FC<CommentPanelProps> = () => {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', width: '100%', flexDirection: 'column' }}>
               <Space>
                 <Text strong>{note.author_name}</Text>
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  {new Date(note.created_at).toLocaleString()}
-                </Text>
+                <Tooltip title={formatFullTime(note.created_at)}>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    {formatTimeAgo(note.created_at)}
+                  </Text>
+                </Tooltip>
               </Space>
               {canJump && (
                 <Space size={4} style={{ flexShrink: 0 }}>
@@ -322,18 +411,16 @@ const CommentPanel: FC<CommentPanelProps> = () => {
               >
                 {note.body}
               </Paragraph>
-              {!note.system && (
-                <Space>
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<DeleteOutlined />}
-                    onClick={() => handleDeleteNote(note.id)}
-                  >
-                    删除
-                  </Button>
-                </Space>
-              )}
+              <Space>
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<DeleteOutlined />}
+                  onClick={() => handleDeleteNote(note.id)}
+                >
+                  删除
+                </Button>
+              </Space>
             </div>
           }
         />

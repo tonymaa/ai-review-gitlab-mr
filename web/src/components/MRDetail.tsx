@@ -85,6 +85,18 @@ const MRDetail: FC<MRDetailProps> = ({ project_id, mr, onRefresh }) => {
     window.open(mr.web_url, '_blank')
   }
 
+  // 格式化完整时间为中国习惯格式
+  const formatFullTime = (dateString: string) => {
+    const date = new Date(dateString)
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    const hours = String(date.getHours()).padStart(2, '0')
+    const minutes = String(date.getMinutes()).padStart(2, '0')
+    const seconds = String(date.getSeconds()).padStart(2, '0')
+    return `${year}/${month}/${day} ${hours}:${minutes}:${seconds}`
+  }
+
   const getStateIcon = () => {
     switch (mr.state) {
       case 'opened':
@@ -177,10 +189,12 @@ const MRDetail: FC<MRDetailProps> = ({ project_id, mr, onRefresh }) => {
           <Tag color="cyan" style={{whiteSpace: "normal"}}>{mr.source_branch}</Tag>
           <Text type="secondary">into</Text>
           <Tag color="geekblue" style={{whiteSpace: "normal"}}>{mr.target_branch}</Tag>
-          <Text type="secondary">
-            <ClockCircleOutlined style={{ marginRight: 4 }} />
-            {formatTimeAgo(mr.created_at)}
-          </Text>
+          <Tooltip title={formatFullTime(mr.created_at)}>
+            <Text type="secondary">
+              <ClockCircleOutlined style={{ marginRight: 4 }} />
+              {formatTimeAgo(mr.created_at)}
+            </Text>
+          </Tooltip>
         </Space>
       </div>
 
