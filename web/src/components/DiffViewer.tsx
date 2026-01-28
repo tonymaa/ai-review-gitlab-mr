@@ -53,6 +53,8 @@ const DiffViewer: FC<DiffViewerProps> = ({
     currentMR,
     setNotes,
     setAiComments,
+    isReviewingAllFiles,
+    setIsReviewingSingleFile,
   } = useApp()
   const diffContainerRef = useRef<HTMLDivElement>(null)
 
@@ -79,6 +81,7 @@ const DiffViewer: FC<DiffViewerProps> = ({
     }
 
     setReviewingFile(file.new_path)
+    setIsReviewingSingleFile(true)
     try {
       const result = await api.reviewSingleFile(
         currentProject.id.toString(),
@@ -97,6 +100,7 @@ const DiffViewer: FC<DiffViewerProps> = ({
       message.error(error.response?.data?.detail || 'AI 审查失败')
     } finally {
       setReviewingFile(null)
+      setIsReviewingSingleFile(false)
     }
   }
 
@@ -604,6 +608,7 @@ const DiffViewer: FC<DiffViewerProps> = ({
                   handleReviewFile(file)
                 }}
                 loading={reviewingFile === file.new_path}
+                disabled={isReviewingAllFiles}
                 style={{ fontSize: 11, marginLeft: 8 }}
               >
                 AI 审查

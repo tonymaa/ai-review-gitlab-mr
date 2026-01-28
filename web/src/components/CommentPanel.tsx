@@ -37,6 +37,9 @@ const CommentPanel: FC<CommentPanelProps> = () => {
     loading,
     setLoading,
     jumpToLine,
+    isReviewingAllFiles,
+    setIsReviewingAllFiles,
+    isReviewingSingleFile,
   } = useApp()
 
   const [commentInput, setCommentInput] = useState('')
@@ -163,6 +166,7 @@ const CommentPanel: FC<CommentPanelProps> = () => {
     }
 
     setAiReviewing(true)
+    setIsReviewingAllFiles(true)
     try {
       const result = await api.startReview(
         currentProject.id.toString(),
@@ -181,10 +185,12 @@ const CommentPanel: FC<CommentPanelProps> = () => {
             setAiComments(status.comments)
             message.success(`AI 审查完成，生成 ${status.comments.length} 条评论`)
             setAiReviewing(false)
+            setIsReviewingAllFiles(false)
           }
         } catch (err: any) {
           message.error(err.response?.data?.detail || err.message || '获取审查结果失败')
           setAiReviewing(false)
+          setIsReviewingAllFiles(false)
         }
       }
 
@@ -192,6 +198,7 @@ const CommentPanel: FC<CommentPanelProps> = () => {
     } catch (err: any) {
       message.error(err.response?.data?.detail || 'AI 审查失败')
       setAiReviewing(false)
+      setIsReviewingAllFiles(false)
     }
   }
 
@@ -484,7 +491,7 @@ const CommentPanel: FC<CommentPanelProps> = () => {
             icon={<RobotOutlined />}
             onClick={handleAIReview}
             loading={aiReviewing}
-            disabled={!currentMR}
+            disabled={!currentMR || isReviewingSingleFile}
             size="small"
           >
             AI 审查全部文件

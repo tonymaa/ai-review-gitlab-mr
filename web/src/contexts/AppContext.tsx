@@ -55,6 +55,12 @@ interface AppContextType {
   aiComments: ReviewComment[];
   setAiComments: (comments: ReviewComment[]) => void;
 
+  // AI 审查状态
+  isReviewingAllFiles: boolean;
+  setIsReviewingAllFiles: (reviewing: boolean) => void;
+  isReviewingSingleFile: boolean;
+  setIsReviewingSingleFile: (reviewing: boolean) => void;
+
   // 加载状态
   loading: boolean;
   setLoading: (loading: boolean) => void;
@@ -82,6 +88,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [highlightLine, setHighlightLine] = useState<{ filePath: string; lineNumber: number } | null>(null);
   const [notes, setNotes] = useState<Note[]>([]);
   const [aiComments, setAiComments] = useState<ReviewComment[]>([]);
+  const [isReviewingAllFiles, setIsReviewingAllFiles] = useState(false);
+  const [isReviewingSingleFile, setIsReviewingSingleFile] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -290,6 +298,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setNotes,
     aiComments,
     setAiComments,
+    // AI 审查状态
+    isReviewingAllFiles,
+    setIsReviewingAllFiles,
+    isReviewingSingleFile,
+    setIsReviewingSingleFile,
     // 加载状态和错误
     loading,
     setLoading,
