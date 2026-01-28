@@ -2,7 +2,8 @@
  * 应用全局状态管理
  */
 
-import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import type { ReactNode, Dispatch, SetStateAction } from 'react';
 import type { Project, MergeRequest, DiffFile, Note, ReviewComment, User } from '../types';
 import { api } from '../api/client';
 
@@ -53,7 +54,7 @@ interface AppContextType {
 
   // AI 评论
   aiComments: ReviewComment[];
-  setAiComments: (comments: ReviewComment[]) => void;
+  setAiComments: Dispatch<SetStateAction<ReviewComment[]>>;
 
   // AI 审查状态
   isReviewingAllFiles: boolean;

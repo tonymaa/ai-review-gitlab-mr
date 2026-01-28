@@ -70,8 +70,8 @@ const DiffViewer: FC<DiffViewerProps> = ({
   } | null>(null)
   const [sendingAIComment, setSendingAIComment] = useState<string | null>(null)
 
-  // AI 审查状态
-  const [reviewingFile, setReviewingFile] = useState<string | null>(null)
+  // AI 审查状态 - 使用 Set 支持多个文件同时审查
+  const [reviewingFiles, setReviewingFiles] = useState<Set<string>>(new Set())
 
   // AI 审查当前文件
   const handleReviewFile = async (file: DiffFile) => {
@@ -80,7 +80,8 @@ const DiffViewer: FC<DiffViewerProps> = ({
       return
     }
 
-    setReviewingFile(file.new_path)
+    // 添加到正在审查的文件集合
+    setReviewingFiles(prev => new Set(prev).add(file.new_path))
     setIsReviewingSingleFile(true)
     try {
       const result = await api.reviewSingleFile(
@@ -90,8 +91,9 @@ const DiffViewer: FC<DiffViewerProps> = ({
       )
 
       // 只移除当前文件的旧评论，添加新评论，保留其他文件的评论
-      setAiComments([
-        ...aiComments.filter(c => c.file_path !== file.new_path),
+      // 使用函数式更新避免并发时的竞态条件
+      setAiComments(prev => [
+        ...prev.filter(c => c.file_path !== file.new_path),
         ...result.comments
       ])
       message.success(`AI 审查完成，生成 ${result.comments.length} 条评论`)
@@ -99,7 +101,12 @@ const DiffViewer: FC<DiffViewerProps> = ({
       const error = err as { response?: { data?: { detail?: string } } }
       message.error(error.response?.data?.detail || 'AI 审查失败')
     } finally {
-      setReviewingFile(null)
+      // 从正在审查的文件集合中移除
+      setReviewingFiles(prev => {
+        const next = new Set(prev)
+        next.delete(file.new_path)
+        return next
+      })
       setIsReviewingSingleFile(false)
     }
   }
@@ -607,7 +614,7 @@ const DiffViewer: FC<DiffViewerProps> = ({
                   e.stopPropagation()
                   handleReviewFile(file)
                 }}
-                loading={reviewingFile === file.new_path}
+                loading={reviewingFiles.has(file.new_path)}
                 disabled={isReviewingAllFiles}
                 style={{ fontSize: 11, marginLeft: 8 }}
               >
