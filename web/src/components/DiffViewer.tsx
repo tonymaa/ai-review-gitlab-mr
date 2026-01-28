@@ -3,15 +3,21 @@
  */
 
 import { type FC, useMemo, useEffect, useRef, useState } from 'react'
-import { List, Empty, Typography, Space, Input, Popover, Button, message } from 'antd'
+import { List, Empty, Typography, Space, Input, Popover, Button, message, Tag } from 'antd'
 import {
   FileOutlined,
   PlusOutlined,
   MinusOutlined,
   ArrowRightOutlined,
   CommentOutlined,
+  RobotOutlined,
+  EditOutlined,
+  DeleteOutlined,
+  CloseOutlined,
+  CheckOutlined,
+  SendOutlined,
 } from '@ant-design/icons'
-import type { DiffFile } from '../types'
+import type { DiffFile, ReviewComment } from '../types'
 import { useApp } from '../contexts/AppContext'
 import { api } from '../api/client'
 
@@ -28,6 +34,7 @@ interface DiffViewerProps {
   fileList: DiffFile[]
   selectedFile: DiffFile | null
   onSelectFile: (file: DiffFile) => void
+  aiComments?: ReviewComment[]
 }
 
 const DiffViewer: FC<DiffViewerProps> = ({
@@ -36,14 +43,30 @@ const DiffViewer: FC<DiffViewerProps> = ({
   fileList,
   selectedFile,
   onSelectFile,
+  aiComments = [],
 }) => {
-  const { setCurrentDiffFile, highlightLine, setHighlightLine, currentProject, currentMR, setNotes } = useApp()
+  const {
+    setCurrentDiffFile,
+    highlightLine,
+    setHighlightLine,
+    currentProject,
+    currentMR,
+    setNotes,
+    setAiComments,
+  } = useApp()
   const diffContainerRef = useRef<HTMLDivElement>(null)
 
   // 行内评论状态
   const [commentLineId, setCommentLineId] = useState<string | null>(null)
   const [commentInput, setCommentInput] = useState('')
   const [submittingComment, setSubmittingComment] = useState(false)
+
+  // AI 评论编辑状态
+  const [editingAIComment, setEditingAIComment] = useState<{
+    comment: ReviewComment
+    content: string
+  } | null>(null)
+  const [sendingAIComment, setSendingAIComment] = useState<string | null>(null)
 
   // 当高亮行变化时，滚动到对应行
   useEffect(() => {
@@ -298,6 +321,191 @@ const DiffViewer: FC<DiffViewerProps> = ({
     return <FileOutlined />
   }
 
+  // 获取指定行的 AI 评论
+  const getAICommentsForLine = (lineNumber: number | undefined) => {
+    if (!lineNumber || !diffFile) return []
+    return aiComments.filter(
+      comment => comment.file_path === diffFile.new_path && comment.line_number === lineNumber
+    )
+  }
+
+  // AI 评论操作函数
+  const handleDeleteAIComment = (comment: ReviewComment) => {
+    const updatedComments = aiComments.filter(c =>
+      !(c.file_path === comment.file_path && c.line_number === comment.line_number && c.content === comment.content)
+    )
+    setAiComments(updatedComments)
+    message.success('AI 评论已删除')
+  }
+
+  const handleSendAIComment = async (comment: ReviewComment) => {
+    if (!currentProject || !currentMR) {
+      message.warning('请先选择一个 MR')
+      return
+    }
+
+    const commentKey = `${comment.file_path}-${comment.line_number}-${comment.content.slice(0, 20)}`
+    setSendingAIComment(commentKey)
+    try {
+      await api.createMergeRequestNote(
+        currentProject.id.toString(),
+        currentMR.iid,
+        {
+          body: comment.content,
+          file_path: comment.file_path,
+          line_number: comment.line_number,
+        }
+      )
+      message.success('评论已发布到 GitLab')
+      // 删除已发送的评论
+      handleDeleteAIComment(comment)
+      // 重新加载评论
+      const notes = await api.getMergeRequestNotes(
+        currentProject.id.toString(),
+        currentMR.iid
+      )
+      setNotes(notes)
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { detail?: string } } }
+      message.error(error.response?.data?.detail || '发布失败')
+    } finally {
+      setSendingAIComment(null)
+    }
+  }
+
+  const handleStartEditAIComment = (comment: ReviewComment) => {
+    setEditingAIComment({ comment, content: comment.content })
+  }
+
+  const handleCancelEditAIComment = () => {
+    setEditingAIComment(null)
+  }
+
+  const handleSaveAIComment = () => {
+    if (!editingAIComment) return
+    const updatedComments = aiComments.map(c =>
+      c.file_path === editingAIComment.comment.file_path &&
+      c.line_number === editingAIComment.comment.line_number &&
+      c.content === editingAIComment.comment.content
+        ? { ...c, content: editingAIComment.content }
+        : c
+    )
+    setAiComments(updatedComments)
+    setEditingAIComment(null)
+    message.success('评论已更新')
+  }
+
+  // 渲染 AI 评论
+  const renderAIComment = (comment: ReviewComment) => {
+    const getSeverityTag = (severity: string) => {
+      switch (severity) {
+        case 'critical':
+          return <Tag color="red" style={{ fontSize: 11 }}>严重</Tag>
+        case 'warning':
+          return <Tag color="orange" style={{ fontSize: 11 }}>警告</Tag>
+        case 'suggestion':
+          return <Tag color="blue" style={{ fontSize: 11 }}>建议</Tag>
+        default:
+          return <Tag style={{ fontSize: 11 }}>{severity}</Tag>
+      }
+    }
+
+    const commentKey = `${comment.file_path}-${comment.line_number}-${comment.content.slice(0, 20)}`
+    const isEditing = editingAIComment?.comment.file_path === comment.file_path &&
+                     editingAIComment?.comment.line_number === comment.line_number &&
+                     editingAIComment?.comment.content === comment.content
+    const isSending = sendingAIComment === commentKey
+
+    return (
+      <div
+        key={commentKey}
+        style={{
+          marginLeft: 120, // 对齐到内容区域
+          marginTop: 4,
+          marginBottom: 8,
+          padding: '8px 12px',
+          background: '#1677ff15',
+          borderLeft: '3px solid #1677ff',
+          borderRadius: 4,
+        }}
+      >
+        <Space size="small" direction="vertical" style={{ width: '100%' }}>
+          <Space size="small" wrap>
+            <RobotOutlined style={{ color: '#1677ff', fontSize: 12 }} />
+            {getSeverityTag(comment.severity)}
+          </Space>
+          {isEditing ? (
+            <Input.TextArea
+              value={editingAIComment.content}
+              onChange={(e) => setEditingAIComment({ ...editingAIComment, content: e.target.value })}
+              autoSize={{ minRows: 2, maxRows: 6 }}
+              size="small"
+              style={{ fontSize: 12 }}
+            />
+          ) : (
+            <Text style={{ fontSize: 12, color: '#d9d9d9', whiteSpace: 'pre-wrap' }}>
+              {comment.content}
+            </Text>
+          )}
+          <Space size="small">
+            {isEditing ? (
+              <>
+                <Button
+                  type="primary"
+                  size="small"
+                  icon={<CheckOutlined />}
+                  onClick={handleSaveAIComment}
+                  style={{ fontSize: 11 }}
+                >
+                  保存
+                </Button>
+                <Button
+                  size="small"
+                  icon={<CloseOutlined />}
+                  onClick={handleCancelEditAIComment}
+                  style={{ fontSize: 11 }}
+                >
+                  取消
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  type="primary"
+                  size="small"
+                  icon={<SendOutlined />}
+                  onClick={() => handleSendAIComment(comment)}
+                  loading={isSending}
+                  style={{ fontSize: 11 }}
+                >
+                  发送
+                </Button>
+                <Button
+                  size="small"
+                  icon={<EditOutlined />}
+                  onClick={() => handleStartEditAIComment(comment)}
+                  style={{ fontSize: 11 }}
+                >
+                  编辑
+                </Button>
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<DeleteOutlined />}
+                  onClick={() => handleDeleteAIComment(comment)}
+                  danger
+                  style={{ fontSize: 11 }}
+                >
+                  删除
+                </Button>
+              </>
+            )}
+          </Space>
+        </Space>
+      </div>
+    )
+  }
+
   return (
     <div style={{
       flex: 1,
@@ -405,7 +613,16 @@ const DiffViewer: FC<DiffViewerProps> = ({
 
             {/* Diff 行 */}
             <div>
-              {diffLines.map((line, index) => renderLine(line, index))}
+              {diffLines.map((line, index) => {
+                const lineComments = getAICommentsForLine(line.newNumber || line.oldNumber)
+                return (
+                  <div key={index}>
+                    {renderLine(line, index)}
+                    {/* AI 评论 */}
+                    {lineComments.length > 0 && lineComments.map(renderAIComment)}
+                  </div>
+                )
+              })}
             </div>
           </div>
         )}

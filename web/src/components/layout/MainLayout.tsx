@@ -115,6 +115,7 @@ const MainLayout: FC = () => {
     setCurrentDiffFile,
     loading,
     setLoading,
+    aiComments,
   } = useApp()
 
   const [diffLines, setDiffLines] = useState<ReturnType<typeof parseDiffLines>>([])
@@ -193,6 +194,7 @@ const MainLayout: FC = () => {
           fileList={diffFiles}
           selectedFile={currentDiffFile}
           onSelectFile={(file) => setCurrentDiffFile(file)}
+          aiComments={aiComments}
         />
       </Content>
 
