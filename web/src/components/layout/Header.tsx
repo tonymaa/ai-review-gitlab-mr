@@ -163,7 +163,6 @@ const Header: FC<HeaderProps> = ({ onOpenConnect, onOpenConfig, onOpenRelatedMR 
           )}
 
           {isConnected && (
-            <>
               <Button
                 icon={<UnorderedListOutlined />}
                 size="small"
@@ -171,33 +170,34 @@ const Header: FC<HeaderProps> = ({ onOpenConnect, onOpenConfig, onOpenRelatedMR 
               >
                 与我相关
               </Button>
+          )}
 
-              <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
-                <Avatar
-                  size="small"
-                  icon={<UserOutlined />}
-                  style={{ cursor: 'pointer' }}
-                />
-              </Dropdown>
+          <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
+            <Avatar
+              size="small"
+              icon={<UserOutlined />}
+              style={{ cursor: 'pointer' }}
+            />
+          </Dropdown>
 
-              {/* 暂时隐藏主题切换按钮
-              <Tooltip title={theme === 'dark' ? '切换到明亮模式' : '切换到暗黑模式'}>
-                <Button
-                  type="text"
-                  icon={theme === 'dark' ? <MoonOutlined /> : <SunOutlined />}
-                  size="small"
-                  onClick={toggleTheme}
-                />
-              </Tooltip>
-              */}
+          {/* 暂时隐藏主题切换按钮
+          <Tooltip title={theme === 'dark' ? '切换到明亮模式' : '切换到暗黑模式'}>
+            <Button
+              type="text"
+              icon={theme === 'dark' ? <MoonOutlined /> : <SunOutlined />}
+              size="small"
+              onClick={toggleTheme}
+            />
+          </Tooltip>
+          */}
 
+          {isConnected && (
               <Button
                 type="text"
                 icon={<SettingOutlined />}
                 size="small"
                 onClick={onOpenConfig}
               />
-            </>
           )}
         </Space>
       </AntHeader>
