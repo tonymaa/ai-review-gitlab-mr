@@ -72,6 +72,7 @@ ai:
 # 应用配置
 # ================================
 app:
+  allow_registration: true
   # 数据缓存目录
   cache_dir: "./cache"
 

@@ -66,6 +66,10 @@ interface AppContextType {
   isReviewingSingleFile: boolean;
   setIsReviewingSingleFile: (reviewing: boolean) => void;
 
+  // 应用配置
+  allowRegistration: boolean;
+  setAllowRegistration: (allowed: boolean) => void;
+
   // 主题
   theme: Theme;
   toggleTheme: () => void;
@@ -109,6 +113,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [allowRegistration, setAllowRegistration] = useState(true);
 
   // 标记是否已从 localStorage 加载
   const [loadedFromStorage, setLoadedFromStorage] = useState(false);
@@ -288,6 +293,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   }, [theme]);
 
+  // 加载应用配置（包括 allowRegistration）
+  useEffect(() => {
+    const loadAppConfig = async () => {
+      if (!isAuthenticated) return;
+      try {
+        const config = await api.getConfig();
+        if (config.allow_registration !== undefined) {
+          setAllowRegistration(config.allow_registration);
+        }
+      } catch (err) {
+        console.error('Failed to load app config:', err);
+      }
+    };
+    loadAppConfig();
+  }, [isAuthenticated]);
+
   // 设置当前项目
   const handleSetCurrentProject = useCallback((project: Project | null) => {
     setCurrentProject(project);
@@ -352,6 +373,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setIsReviewingAllFiles,
     isReviewingSingleFile,
     setIsReviewingSingleFile,
+    // 应用配置
+    allowRegistration,
+    setAllowRegistration,
     // 主题
     theme,
     toggleTheme,

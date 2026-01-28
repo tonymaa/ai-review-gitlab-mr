@@ -89,6 +89,7 @@ class AppConfig(BaseSettings):
 
     cache_dir: str = Field(default="./cache", description="缓存目录")
     database_path: str = Field(default="./data/review.db", description="数据库路径")
+    allow_registration: bool = Field(default=True, description="是否允许用户注册")
     ui: UIConfig = Field(default_factory=UIConfig)
     auto_refresh: AutoRefreshConfig = Field(default_factory=AutoRefreshConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
@@ -200,6 +201,8 @@ class Settings:
                     self._app.cache_dir = app_config["cache_dir"]
                 if app_config.get("database_path"):
                     self._app.database_path = app_config["database_path"]
+                if app_config.get("allow_registration") is not None:
+                    self._app.allow_registration = app_config["allow_registration"]
                 if "ui" in app_config:
                     ui_config = app_config["ui"]
                     if ui_config.get("theme"):

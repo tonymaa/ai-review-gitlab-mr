@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.core.database import DatabaseManager, User
 from src.core.auth import create_access_token, verify_token
+from src.core.config import settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -169,6 +170,13 @@ async def register(request: RegisterRequest, db: DatabaseManager = Depends(get_d
     Returns:
         注册响应，包含用户信息和 token
     """
+    # 检查是否允许注册
+    if not settings.app.allow_registration:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="注册功能已关闭，请联系管理员",
+        )
+
     try:
         # 创建用户 - create_user 已经返回 user_data 字典
         user_data = db.create_user(request.username, request.password)

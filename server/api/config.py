@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.core.database import DatabaseManager
 from src.core.auth import verify_token
+from src.core.config import settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -109,6 +110,7 @@ class ConfigResponse(BaseModel):
     """配置响应"""
     gitlab: Optional[GitLabConfigModel] = None
     ai: Optional[AIConfigModel] = None
+    allow_registration: bool = Field(default=True, description="是否允许用户注册")
 
 
 class UpdateConfigRequest(BaseModel):
@@ -127,6 +129,9 @@ async def get_config(
     """
     获取当前用户配置
     """
+    # 获取应用配置
+    allow_registration = settings.app.allow_registration
+
     # 获取 GitLab 配置
     gitlab_config = db.get_gitlab_config(user_id)
     gitlab_response = None
@@ -157,7 +162,11 @@ async def get_config(
             review_rules=ai_config["review_rules"] or [],
         )
 
-    return ConfigResponse(gitlab=gitlab_response, ai=ai_response)
+    return ConfigResponse(
+        gitlab=gitlab_response,
+        ai=ai_response,
+        allow_registration=allow_registration
+    )
 
 
 @router.post("/config")

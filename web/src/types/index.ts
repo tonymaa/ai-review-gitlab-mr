@@ -52,6 +52,7 @@ export interface AIConfig {
 export interface AppConfig {
   gitlab?: GitLabConfig | null;
   ai?: AIConfig | null;
+  allow_registration?: boolean;
 }
 
 /** 项目信息 */
