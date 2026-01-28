@@ -3,7 +3,7 @@
  */
 
 import { FC, useEffect, useState } from 'react'
-import { Tag, Space, Typography, Button, message, Spin } from 'antd'
+import { Card, Tag, Space, Typography, Button, message, Spin } from 'antd'
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
@@ -120,7 +120,11 @@ const MRDetail: FC<MRDetailProps> = ({ project_id, mr, onRefresh }) => {
   }
 
   return (
-    <div style={{ padding: '12px', borderBottom: '1px solid #303030' }}>
+    <Card
+      size="small"
+      style={{ margin: '8px', borderRadius: 4 }}
+      styles={{ body: { padding: '12px' } }}
+    >
       {/* 标题和状态 */}
       <div style={{ marginBottom: 8 }}>
         <Space size="small" wrap>
@@ -149,18 +153,16 @@ const MRDetail: FC<MRDetailProps> = ({ project_id, mr, onRefresh }) => {
 
       {/* 描述 */}
       {mr.description && (
-        <>
-          <Paragraph
-            style={{
-              marginBottom: 8,
-              fontSize: 12,
-              color: '#d9d9d9',
-            }}
-            ellipsis={{ rows: 2, expandable: true, symbol: '展开' }}
-          >
-            {mr.description}
-          </Paragraph>
-        </>
+        <Paragraph
+          style={{
+            marginBottom: 8,
+            fontSize: 12,
+            color: '#d9d9d9',
+          }}
+          ellipsis={{ rows: 2, expandable: true, symbol: '展开' }}
+        >
+          {mr.description}
+        </Paragraph>
       )}
 
       {/* 批准状态 */}
@@ -246,7 +248,7 @@ const MRDetail: FC<MRDetailProps> = ({ project_id, mr, onRefresh }) => {
           )}
         </Space>
       </div>
-    </div>
+    </Card>
   )
 }
 
