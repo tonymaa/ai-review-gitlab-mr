@@ -103,7 +103,7 @@ function AppContent() {
   }
 
   return (
-    <Layout style={{ minHeight: '100vh', background: '#000', width: '100vw' }}>
+    <Layout style={{ minHeight: '100vh', width: '100vw' }} className="app-layout">
       {isAuthenticated ? (
         <>
           <Header

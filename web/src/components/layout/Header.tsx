@@ -3,7 +3,7 @@
  */
 
 import { type FC, useState, useMemo } from 'react'
-import { Layout, Button, Space, Dropdown, Avatar, Typography, Tag } from 'antd'
+import { Layout, Button, Space, Dropdown, Avatar, Typography, Tag, Tooltip } from 'antd'
 import {
   SettingOutlined,
   GitlabOutlined,
@@ -14,6 +14,8 @@ import {
   DownOutlined,
   PlusOutlined,
   DeleteOutlined,
+  SunOutlined,
+  MoonOutlined,
 } from '@ant-design/icons'
 import { useApp } from '../../contexts/AppContext'
 import ProjectSelectorModal from './ProjectSelectorModal'
@@ -30,7 +32,7 @@ interface HeaderProps {
 }
 
 const Header: FC<HeaderProps> = ({ onOpenConnect, onOpenConfig, onOpenRelatedMR }) => {
-  const { isConnected, user, logout, projects, addProject, removeProject, currentProject, setCurrentProject } = useApp()
+  const { isConnected, user, logout, projects, addProject, removeProject, currentProject, setCurrentProject, theme, toggleTheme } = useApp()
   const [projectModalOpen, setProjectModalOpen] = useState(false)
 
   const handleSelectProject = (project: Project) => {
@@ -117,10 +119,10 @@ const Header: FC<HeaderProps> = ({ onOpenConnect, onOpenConfig, onOpenRelatedMR 
         {/* 左侧：Logo 和项目名称 */}
         <Space size="middle">
           <GitlabOutlined style={{ fontSize: 20 }} />
-          <Text strong style={{ color: '#fff' }}>GitLab AI Review</Text>
+          <Text strong style={{ color: 'var(--text-primary)' }}>GitLab AI Review</Text>
           {isConnected && (
             <>
-              <div style={{ width: 1, height: 16, background: '#303030' }} />
+              <div style={{ width: 1, height: 16, background: 'var(--border-color)' }} />
               <Dropdown menu={{ items: projectMenuItems }} trigger={['click']} placement="bottomLeft">
                 <div
                   style={{
@@ -129,23 +131,23 @@ const Header: FC<HeaderProps> = ({ onOpenConnect, onOpenConfig, onOpenRelatedMR 
                     gap: 6,
                     padding: '4px 12px',
                     borderRadius: 4,
-                    background: '#1f1f1f',
+                    background: 'var(--bg-tertiary)',
                     cursor: 'pointer',
-                    border: '1px solid #303030',
+                    border: '1px solid var(--border-color)',
                     transition: 'border-color 0.2s',
                   }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.borderColor = '#1890ff'
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.borderColor = '#303030'
+                    e.currentTarget.style.borderColor = 'var(--border-color)'
                   }}
                 >
-                  <ProjectOutlined style={{ color: currentProject ? '#1890ff' : '#888' }} />
-                  <Text style={{ color: currentProject ? '#fff' : '#888' }}>
+                  <ProjectOutlined style={{ color: currentProject ? '#1890ff' : 'var(--text-secondary)' }} />
+                  <Text style={{ color: currentProject ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
                     {currentProject?.name || `选择项目 (${projects.length})`}
                   </Text>
-                  <DownOutlined style={{ fontSize: 10, color: '#888' }} />
+                  <DownOutlined style={{ fontSize: 10, color: 'var(--text-secondary)' }} />
                 </div>
               </Dropdown>
             </>
@@ -177,6 +179,17 @@ const Header: FC<HeaderProps> = ({ onOpenConnect, onOpenConfig, onOpenRelatedMR 
                   style={{ cursor: 'pointer' }}
                 />
               </Dropdown>
+
+              {/* 暂时隐藏主题切换按钮
+              <Tooltip title={theme === 'dark' ? '切换到明亮模式' : '切换到暗黑模式'}>
+                <Button
+                  type="text"
+                  icon={theme === 'dark' ? <MoonOutlined /> : <SunOutlined />}
+                  size="small"
+                  onClick={toggleTheme}
+                />
+              </Tooltip>
+              */}
 
               <Button
                 type="text"

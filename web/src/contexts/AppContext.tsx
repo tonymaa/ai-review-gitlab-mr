@@ -7,8 +7,12 @@ import type { ReactNode, Dispatch, SetStateAction } from 'react';
 import type { Project, MergeRequest, DiffFile, Note, ReviewComment, User } from '../types';
 import { api } from '../api/client';
 
-// LocalStorage key
+// LocalStorage keys
 const PROJECTS_STORAGE_KEY = 'gitlab-ai-review-projects';
+const THEME_STORAGE_KEY = 'gitlab-ai-review-theme';
+
+// 主题类型
+export type Theme = 'light' | 'dark';
 
 interface AppContextType {
   // 用户认证
@@ -62,6 +66,10 @@ interface AppContextType {
   isReviewingSingleFile: boolean;
   setIsReviewingSingleFile: (reviewing: boolean) => void;
 
+  // 主题
+  theme: Theme;
+  toggleTheme: () => void;
+
   // 加载状态
   loading: boolean;
   setLoading: (loading: boolean) => void;
@@ -91,6 +99,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [aiComments, setAiComments] = useState<ReviewComment[]>([]);
   const [isReviewingAllFiles, setIsReviewingAllFiles] = useState(false);
   const [isReviewingSingleFile, setIsReviewingSingleFile] = useState(false);
+  const [theme, setTheme] = useState<Theme>(() => {
+    try {
+      const stored = localStorage.getItem(THEME_STORAGE_KEY);
+      return (stored === 'light' || stored === 'dark') ? stored : 'dark';
+    } catch {
+      return 'dark';
+    }
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -240,6 +256,35 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setCurrentProject(prev => prev?.id === projectId ? null : prev);
   }, []);
 
+  // 切换主题
+  const toggleTheme = useCallback(() => {
+    setTheme(prev => {
+      const newTheme = prev === 'dark' ? 'light' : 'dark';
+      // 保存到 localStorage
+      try {
+        localStorage.setItem(THEME_STORAGE_KEY, newTheme);
+      } catch (err) {
+        console.error('Failed to save theme to localStorage:', err);
+      }
+      // 应用主题到 document
+      if (newTheme === 'dark') {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+      return newTheme;
+    });
+  }, []);
+
+  // 初始化主题
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [theme]);
+
   // 设置当前项目
   const handleSetCurrentProject = useCallback((project: Project | null) => {
     setCurrentProject(project);
@@ -304,6 +349,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setIsReviewingAllFiles,
     isReviewingSingleFile,
     setIsReviewingSingleFile,
+    // 主题
+    theme,
+    toggleTheme,
     // 加载状态和错误
     loading,
     setLoading,

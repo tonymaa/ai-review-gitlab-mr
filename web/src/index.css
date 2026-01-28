@@ -9,12 +9,37 @@
   line-height: 1.5;
   font-weight: 400;
 
-  color-scheme: dark;
-
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* 暗色主题（默认） */
+:root,
+html.dark {
+  color-scheme: dark;
+
+  --bg-primary: #141414;
+  --bg-secondary: #1f1f1f;
+  --bg-tertiary: #2a2a2a;
+  --border-color: #303030;
+  --text-primary: #fff;
+  --text-secondary: #999;
+  --text-tertiary: #666;
+}
+
+/* 明亮主题 */
+html:not(.dark) {
+  color-scheme: light;
+
+  --bg-primary: #f5f5f5;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #fafafa;
+  --border-color: #d9d9d9;
+  --text-primary: #000;
+  --text-secondary: #666;
+  --text-tertiary: #999;
 }
 
 * {
@@ -34,6 +59,8 @@ body {
   display: flex;
   min-width: 320px;
   min-height: 100vh;
+  background: var(--bg-primary);
+  color: var(--text-primary);
 }
 
 code {
@@ -48,35 +75,54 @@ code {
 }
 
 ::-webkit-scrollbar-track {
-  background: #1f1f1f;
+  background: var(--bg-secondary);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #444;
+  background: var(--border-color);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #555;
+  background: var(--text-tertiary);
 }
 
 /* Ant Design 暗色主题覆盖 */
-.ant-layout {
+html.dark .ant-layout {
   background: #141414 !important;
 }
 
-.ant-layout-header {
+html.dark .ant-layout-header {
   background: #1f1f1f !important;
   border-bottom: 1px solid #303030;
 }
 
-.ant-layout-sider {
+html.dark .ant-layout-sider {
   background: #1f1f1f !important;
   border-right: 1px solid #303030;
 }
 
-.ant-layout-content {
+html.dark .ant-layout-content {
   background: #141414 !important;
+}
+
+/* Ant Design 明亮主题覆盖 */
+html:not(.dark) .ant-layout {
+  background: var(--bg-primary) !important;
+}
+
+html:not(.dark) .ant-layout-header {
+  background: var(--bg-secondary) !important;
+  border-bottom: 1px solid var(--border-color);
+}
+
+html:not(.dark) .ant-layout-sider {
+  background: var(--bg-secondary) !important;
+  border-right: 1px solid var(--border-color);
+}
+
+html:not(.dark) .ant-layout-content {
+  background: var(--bg-primary) !important;
 }
 
 /* Diff 样式 */
