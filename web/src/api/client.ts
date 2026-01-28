@@ -65,15 +65,17 @@ class APIClient {
   // ==================== Token 管理 ====================
 
   private loadToken() {
+    console.log('[APIClient] loadToken called');
+    console.log('[APIClient] Storage key:', TOKEN_STORAGE_KEY);
     try {
       const stored = localStorage.getItem(TOKEN_STORAGE_KEY);
-      console.log('[APIClient] Loading token from localStorage:', stored ? 'found' : 'not found');
+      console.log('[APIClient] localStorage.getItem result:', stored ? `found (${stored.length} chars, starts with: ${stored.substring(0, 20)}...)` : 'not found');
       if (stored) {
         this.token = stored;
-        console.log('[APIClient] Token loaded successfully');
+        console.log('[APIClient] Token loaded successfully into memory');
       }
     } catch (err) {
-      console.error('Failed to load token from localStorage:', err);
+      console.error('[APIClient] Failed to load token from localStorage:', err);
     }
   }
 
@@ -97,7 +99,12 @@ class APIClient {
   }
 
   clearToken() {
+    console.log('[APIClient] clearToken called');
+    console.log('[APIClient] Token before clear:', this.token ? `exists (${this.token.length} chars)` : 'null');
+    console.log('[APIClient] localStorage before clear:', localStorage.getItem(TOKEN_STORAGE_KEY) ? 'exists' : 'null');
     this.setToken(null);
+    console.log('[APIClient] Token after clear:', this.token ? `exists (${this.token.length} chars)` : 'null');
+    console.log('[APIClient] localStorage after clear:', localStorage.getItem(TOKEN_STORAGE_KEY) ? 'exists' : 'null');
   }
 
   // ==================== Auth ====================
@@ -295,4 +302,6 @@ class APIClient {
 }
 
 // 单例实例
+console.log('[api module] Creating APIClient singleton...');
 export const api = new APIClient();
+console.log('[api module] APIClient singleton created, token:', api.getToken() ? 'exists' : 'null');

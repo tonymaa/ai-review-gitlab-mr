@@ -274,7 +274,7 @@ async def logout(current_user: dict = Depends(get_current_active_user)):
     Returns:
         登出响应
     """
-    logger.info(f"用户登出: {current_user.username}")
+    logger.info(f"用户登出: {current_user['username']}")
     return {
         "status": "ok",
         "message": "登出成功",

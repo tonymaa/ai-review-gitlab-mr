@@ -139,11 +139,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   }, [projects, loadedFromStorage]);
 
-  // 检查用户登录状态
-  useEffect(() => {
-    checkAuth();
-  }, []);
-
   // 登录
   const login = useCallback(async (username: string, password: string) => {
     setLoading(true);
@@ -180,11 +175,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // 登出
   const logout = useCallback(async () => {
+    console.log('[AppContext] logout called');
     try {
-      await api.logout();
+      const result = await api.logout();
+      console.log('[AppContext] logout API result:', result);
     } catch (err) {
-      console.error('Logout error:', err);
+      console.error('[AppContext] Logout error:', err);
     } finally {
+      console.log('[AppContext] Clearing app state');
       setIsAuthenticated(false);
       setUser(null);
       // 清除其他状态
@@ -194,14 +192,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setCurrentMR(null);
       setDiffFiles([]);
       setCurrentDiffFile(null);
+      console.log('[AppContext] App state cleared');
     }
   }, []);
 
   // 检查认证状态
   const checkAuth = useCallback(async () => {
+    console.log('[checkAuth] Starting auth check...');
     const token = api.getToken();
-    console.log('[checkAuth] Token from api.getToken():', token ? 'exists' : 'null');
+    console.log('[checkAuth] Token from api.getToken():', token ? `exists (${token.length} chars)` : 'null');
+    console.log('[checkAuth] localStorage token:', localStorage.getItem('gitlab-ai-review-token') ? 'exists in localStorage' : 'null in localStorage');
     if (!token) {
+      console.log('[checkAuth] No token found, setting authenticated to false');
       setIsAuthenticated(false);
       setUser(null);
       return;
@@ -216,6 +218,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     } catch (err) {
       console.error('[checkAuth] Check auth failed:', err);
       // Token 可能已过期，清除它
+      console.log('[checkAuth] Token invalid, clearing token');
       api.clearToken();
       setIsAuthenticated(false);
       setUser(null);
