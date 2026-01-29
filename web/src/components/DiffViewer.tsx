@@ -323,7 +323,7 @@ const DiffViewer: FC<DiffViewerProps> = ({
           userSelect: 'none',
           flexShrink: 0,
         }}>
-          {line.oldNumber ?? line.newNumber ?? ''}
+          {line.type === 'addition' ? '' : line.oldNumber ?? line.newNumber ?? ''}
         </div>
 
         {/* 另一侧行号 */}
@@ -335,7 +335,7 @@ const DiffViewer: FC<DiffViewerProps> = ({
           userSelect: 'none',
           flexShrink: 0,
         }}>
-          {line.newNumber ?? line.oldNumber ?? ''}
+          {line.type === 'deletion' ? '' : line.newNumber ?? line.oldNumber ?? ''}
         </div>
 
         {/* 标记 */}
