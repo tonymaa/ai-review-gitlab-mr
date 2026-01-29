@@ -97,7 +97,7 @@ class AIConfig(Base):
     openai_base_url = Column(String(500), nullable=True)
     openai_model = Column(String(100), nullable=False, default="gpt-4")
     openai_temperature = Column(Integer, nullable=False, default=30)  # 存储为整数 * 100
-    openai_max_tokens = Column(Integer, nullable=False, default=2000)
+    openai_max_tokens = Column(Integer, nullable=False, default=4000)
 
     # Ollama 配置
     ollama_base_url = Column(String(500), nullable=False, default="http://localhost:11434")
@@ -613,7 +613,7 @@ class DatabaseManager:
         openai_base_url: Optional[str] = None,
         openai_model: str = "gpt-4",
         openai_temperature: float = 0.3,
-        openai_max_tokens: int = 2000,
+        openai_max_tokens: int = 4000,
         ollama_base_url: str = "http://localhost:11434",
         ollama_model: str = "codellama",
         review_rules: Optional[List[str]] = None,

@@ -145,7 +145,7 @@ def _build_review_config(ai_config: dict, provider: str) -> dict:
     config = {
         "provider": provider,
         "temperature": 0.3,
-        "max_tokens": 2000,
+        "max_tokens": 4000,
         "review_rules": ai_config.get("review_rules", []),
     }
 
@@ -155,7 +155,7 @@ def _build_review_config(ai_config: dict, provider: str) -> dict:
             "model": ai_config.get("openai_model", "gpt-4"),
             "base_url": ai_config.get("openai_base_url"),
             "temperature": ai_config.get("openai_temperature", 0.3),
-            "max_tokens": ai_config.get("openai_max_tokens", 2000),
+            "max_tokens": ai_config.get("openai_max_tokens", 4000),
         })
     elif provider == "ollama":
         config.update({

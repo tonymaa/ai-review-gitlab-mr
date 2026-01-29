@@ -74,7 +74,7 @@ class AIReviewer:
         provider: ReviewProvider,
         model: str,
         temperature: float = 0.3,
-        max_tokens: int = 2000,
+        max_tokens: int = 4000,
     ):
         """
         初始化AI审查器
@@ -133,7 +133,7 @@ class OpenAIReviewer(AIReviewer):
         model: str = "gpt-4",
         base_url: Optional[str] = None,
         temperature: float = 0.3,
-        max_tokens: int = 2000,
+        max_tokens: int = 4000,
     ):
         super().__init__(
             provider=ReviewProvider.OPENAI,
@@ -710,7 +710,7 @@ class OllamaReviewer(AIReviewer):
         base_url: str = "http://localhost:11434",
         model: str = "codellama",
         temperature: float = 0.3,
-        max_tokens: int = 2000,
+        max_tokens: int = 4000,
     ):
         super().__init__(
             provider=ReviewProvider.OLLAMA,

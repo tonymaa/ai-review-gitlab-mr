@@ -86,7 +86,7 @@ class AIReviewWorker(QObject):
             provider = self.review_config.get("provider", "openai")
             reviewer_kwargs = {
                 "temperature": self.review_config.get("temperature", 0.3),
-                "max_tokens": self.review_config.get("max_tokens", 2000),
+                "max_tokens": self.review_config.get("max_tokens", 4000),
             }
 
             if provider == "openai":
@@ -1283,7 +1283,7 @@ class MainWindow(QMainWindow):
             review_config = {
                 "provider": provider,
                 "temperature": settings.ai.openai.temperature if provider == "openai" else 0.3,
-                "max_tokens": settings.ai.openai.max_tokens if provider == "openai" else 2000,
+                "max_tokens": settings.ai.openai.max_tokens if provider == "openai" else 4000,
                 "review_rules": settings.ai.review_rules,
             }
 
@@ -1374,7 +1374,7 @@ class MainWindow(QMainWindow):
             review_config = {
                 "provider": provider,
                 "temperature": settings.ai.openai.temperature if provider == "openai" else 0.3,
-                "max_tokens": settings.ai.openai.max_tokens if provider == "openai" else 2000,
+                "max_tokens": settings.ai.openai.max_tokens if provider == "openai" else 4000,
                 "review_rules": settings.ai.review_rules,
             }
 

@@ -30,7 +30,7 @@ class OpenAIConfig(BaseSettings):
     base_url: Optional[str] = Field(default=None, description="自定义API端点")
     model: str = Field(default="gpt-4", description="使用的模型")
     temperature: float = Field(default=0.3, ge=0, le=2, description="温度参数")
-    max_tokens: int = Field(default=2000, ge=1, description="最大token数")
+    max_tokens: int = Field(default=4000, ge=1, description="最大token数")
 
 
 class OllamaConfig(BaseSettings):
