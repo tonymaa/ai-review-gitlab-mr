@@ -398,15 +398,13 @@ class OpenAIReviewer(AIReviewer):
 Each line in the diff shows: [OLD:number | NEW:number] prefix code
 
 **Rules:**
-1. ONLY review lines starting with `+` (added) or `-` (removed)
-2. IGNORE lines starting with ` ` (space) - these are context
+1. ONLY review lines starting with `+` (added)
+2. IGNORE lines starting with `-` (removed) or ` ` (space)
 3. For `+` lines: Copy the number AFTER `NEW:`
-4. For `-` lines: Copy the number AFTER `OLD:`
-5. line_number must be a plain INTEGER (no quotes, no text, just the number)
+4. line_number must be a plain INTEGER (no quotes, no text, just the number)
 
 **Example:**
 [OLD:10 | NEW:10] function foo() {{    <-- IGNORE (context)
-[OLD:11 | NEW:- ]-  return 1;          <-- Report: "line_number": 11
 [OLD:-  | NEW:11]+  const x = 1;       <-- Report: "line_number": 11
 [OLD:-  | NEW:12]+  return x;          <-- Report: "line_number": 12
 [OLD:12 | NEW:13] }}                   <-- IGNORE (context)
@@ -438,7 +436,7 @@ Each line in the diff shows: [OLD:number | NEW:number] prefix code
 {annotated_diff}
 ---
 
-Review ONLY lines starting with + or -. Output valid JSON with integer line_numbers."""
+Review ONLY lines starting with + (added). Output valid JSON with integer line_numbers."""
         return prompt
 
     def _annotate_diff_with_line_numbers(self, diff_content: str) -> str:
