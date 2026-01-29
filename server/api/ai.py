@@ -366,7 +366,10 @@ async def get_review_status(task_id: str):
     if task["status"] == "completed":
         return task["result"]
     elif task["status"] == "error":
-        raise HTTPException(status_code=500, detail=task.get("error", "审查失败"))
+        return {
+            "status": "error",
+            "error": task.get("error", "审查失败")
+        }
     else:
         return {"status": "running"}
 

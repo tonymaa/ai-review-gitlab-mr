@@ -222,6 +222,17 @@ const CommentPanel: FC<CommentPanelProps> = () => {
             message.success(`AI 审查完成，生成 ${status.comments.length} 条评论`)
             setAiReviewing(false)
             setIsReviewingAllFiles(false)
+          } else if ('status' in status && status.status === 'error') {
+            // 错误
+            message.error(status.error || 'AI 审查失败')
+            setAiReviewing(false)
+            setIsReviewingAllFiles(false)
+          } else if ('comments' in status) {
+            // 兼容旧格式（直接返回结果）
+            setAiComments(status.comments)
+            message.success(`AI 审查完成，生成 ${status.comments.length} 条评论`)
+            setAiReviewing(false)
+            setIsReviewingAllFiles(false)
           }
         } catch (err: any) {
           message.error(err.response?.data?.detail || err.message || '获取审查结果失败')

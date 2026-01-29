@@ -222,7 +222,7 @@ class OpenAIReviewer(AIReviewer):
             error_msg = str(e)
 
             # 根据错误类型抛出相应的异常
-            if "authentication" in error_str or "unauthorized" in error_str or "401" in error_str:
+            if "authentication" in error_str or "unauthorized" in error_str or "401" in error_str or "403" in error_str:
                 raise AIAuthError("OpenAI API认证失败", "请检查API密钥是否正确")
             elif "quota" in error_str or "429" in error_str or "limit" in error_str:
                 raise AIQuotaError("OpenAI API配额不足", "请检查账户余额或使用限制")
@@ -311,6 +311,10 @@ class OpenAIReviewer(AIReviewer):
                 except (AIAuthError, AIQuotaError, AIModelNotFoundError, AIConnectionError) as e:
                     # 这些是致命错误，应该立即停止审查
                     logger.error(f"AI 服务错误，停止审查: {e}")
+                    raise
+                except AIException as e:
+                    # AI 错误也是致命错误，停止审查
+                    logger.error(f"AI 审查错误，停止审查: {e}")
                     raise
                 except Exception as e:
                     # 其他错误只记录日志，继续审查下一个文件

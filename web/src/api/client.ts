@@ -266,7 +266,7 @@ class APIClient {
     return response.data;
   }
 
-  async getReviewStatus(taskId: string): Promise<ReviewResponse | { status: string }> {
+  async getReviewStatus(taskId: string): Promise<ReviewResponse | { status: string } | { status: 'error'; error: string }> {
     const response = await this.client.get(`/ai/review/${taskId}`, { timeout: 0 });
     return response.data;
   }

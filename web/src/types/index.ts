@@ -136,6 +136,12 @@ export interface ReviewResponse {
   comments: ReviewComment[];
 }
 
+/** AI 审查错误响应 */
+export interface ReviewErrorResponse {
+  status: 'error';
+  error: string;
+}
+
 /** 评论请求 */
 export interface CommentRequest {
   body: string;
