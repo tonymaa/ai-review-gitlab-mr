@@ -91,6 +91,21 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
     }
   }
 
+  const handleSendLGTM = async (item: RelatedMR) => {
+    if (!item.project) return
+
+    try {
+      await api.createMergeRequestNote(
+        item.project.id.toString(),
+        item.mr.iid,
+        { body: 'lgtm' }
+      )
+      message.success('已发送 lgtm')
+    } catch (err: any) {
+      message.error(err.response?.data?.detail || err.message || '发送失败')
+    }
+  }
+
   const handleCopyLink = async (item: RelatedMR) => {
     try {
       await navigator.clipboard.writeText(item.mr.web_url)
@@ -199,6 +214,12 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
 
                 {/* 底部操作按钮 */}
                 <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                  <Button
+                    size="small"
+                    onClick={() => handleSendLGTM(item)}
+                  >
+                    发送 lgtm
+                  </Button>
                   {item.mr.approved_by_current_user ? (
                     <Button
                       size="small"

@@ -262,12 +262,12 @@ class APIClient {
       project_id: projectId,
       mr_iid: mrIid,
       provider,
-    });
+    }, { timeout: 0 });
     return response.data;
   }
 
   async getReviewStatus(taskId: string): Promise<ReviewResponse | { status: string }> {
-    const response = await this.client.get(`/ai/review/${taskId}`);
+    const response = await this.client.get(`/ai/review/${taskId}`, { timeout: 0 });
     return response.data;
   }
 
@@ -277,7 +277,7 @@ class APIClient {
       mr_iid: mrIid,
       file_path: filePath,
       provider,
-    });
+    }, { timeout: 0 });
     return response.data;
   }
 
