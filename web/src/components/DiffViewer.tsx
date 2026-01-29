@@ -114,10 +114,15 @@ const DiffViewer: FC<DiffViewerProps> = ({
   // 当高亮行变化时，滚动到对应行
   useEffect(() => {
     if (highlightLine && diffFile && diffFile.new_path === highlightLine.filePath && diffContainerRef.current) {
-      // 找到对应的行
-      const targetLine = diffLines.find(line =>
-        (line.newNumber === highlightLine.lineNumber || line.oldNumber === highlightLine.lineNumber)
+      // 优先在新增行中查找，如果没有再查找删除行
+      let targetLine = diffLines.find(line =>
+        line.type === 'addition' && line.newNumber === highlightLine.lineNumber
       )
+      if (!targetLine) {
+        targetLine = diffLines.find(line =>
+          line.oldNumber === highlightLine.lineNumber
+        )
+      }
       if (targetLine) {
         const lineIndex = diffLines.indexOf(targetLine)
         // 计算滚动位置（每行高度约20px）
