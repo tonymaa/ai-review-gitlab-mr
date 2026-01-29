@@ -686,7 +686,9 @@ Review ONLY lines starting with + or -. Output valid JSON with integer line_numb
 
             return file_review
 
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
+            logger.error(f"解析文件审查响应失败: {e}")
+            logger.error(f"原始响应内容: {response[:500]}...")
             return FileReview(file_path=diff_file.get_display_path())
 
     def _create_error_result(self, error_message: str) -> AIReviewResult:
