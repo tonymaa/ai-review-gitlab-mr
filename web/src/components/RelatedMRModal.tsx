@@ -80,7 +80,8 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
     setCurrentProject,
     setCurrentMR,
     setMrListFilterRelated,
-    setMrListFilterState
+    setMrListFilterState,
+    addProject
   } = useApp()
   const [loading, setLoading] = useState(false)
   const [data, setData] = useState<RelatedMR[]>([])
@@ -120,6 +121,11 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
     const key = getMRKey(item)
     saveViewedMR(key)
     setViewedMRs(getViewedMRs())
+
+    // 将项目添加到最近打开的项目列表（localStorage）
+    if (item.project) {
+      addProject(item.project)
+    }
 
     // 切换项目
     setCurrentProject(item.project)
