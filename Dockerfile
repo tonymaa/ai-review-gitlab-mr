@@ -23,22 +23,32 @@ FROM python:3.11-slim AS backend-builder
 
 WORKDIR /app
 
+# Use Aliyun mirror for apt (China users can comment out for default)
+RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources \
+    && sed -i 's/security.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources
+
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements
-COPY requirements.txt .
+# Copy server requirements
+COPY deploy/requirements.txt /app/requirements.txt
 
-# Install Python dependencies
-RUN pip install --no-cache-dir --user -r requirements.txt
+# Use Tsinghua mirror for pip (China users can comment out for default)
+RUN pip install --no-cache-dir --user -r /app/requirements.txt \
+    -i https://pypi.tuna.tsinghua.edu.cn/simple \
+    || pip install --no-cache-dir --user -r /app/requirements.txt
 
 # ==================== Stage 3: Final Image ====================
 FROM python:3.11-slim
 
 WORKDIR /app
+
+# Use Aliyun mirror for apt (China users can comment out for default)
+RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources \
+    && sed -i 's/security.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources
 
 # Create non-root user for security
 RUN groupadd -r appuser && useradd -r -g appuser appuser
@@ -63,9 +73,10 @@ COPY .env.example ./.env
 # Copy built frontend from frontend-builder
 COPY --from=frontend-builder /app/web/dist ./web/dist
 
-# Copy entrypoint script
+# Copy entrypoint script and fix line endings (for Windows builds)
 COPY docker-entrypoint.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh \
+    && chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Create necessary directories
 RUN mkdir -p cache data logs && \

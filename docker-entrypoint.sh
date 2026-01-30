@@ -18,5 +18,9 @@ echo "Server will start on: http://0.0.0.0:19000"
 echo "API docs available at: http://0.0.0.0:19000/docs"
 echo ""
 
+# Check Python and dependencies
+echo "Checking Python environment..."
+python --version || exit 1
+
 # Execute the main command
 exec "$@"
