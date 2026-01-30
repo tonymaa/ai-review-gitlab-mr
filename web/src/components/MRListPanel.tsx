@@ -199,16 +199,6 @@ const MRListPanel: FC<MRListPanelProps> = ({
             </Option>
           </Select>
 
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <Checkbox
-              checked={mrListFilterRelated}
-              onChange={(e) => setMrListFilterRelated(e.target.checked)}
-              disabled={!currentProject || !currentUser}
-            >
-              与我相关
-            </Checkbox>
-          </div>
-
           <Select
             placeholder="筛选作者"
             value={authorFilter || undefined}
@@ -223,6 +213,16 @@ const MRListPanel: FC<MRListPanelProps> = ({
               </Option>
             ))}
           </Select>
+
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <Checkbox
+              checked={mrListFilterRelated}
+              onChange={(e) => setMrListFilterRelated(e.target.checked)}
+              disabled={!currentProject || !currentUser}
+            >
+              与我相关
+            </Checkbox>
+          </div>
         </Space>
       </div>
 
