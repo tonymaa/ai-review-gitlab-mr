@@ -2,7 +2,7 @@
  * 与我相关的 MR 弹窗组件
  */
 
-import { type FC, useState, useEffect } from 'react'
+import { type FC, useState, useEffect, useCallback } from 'react'
 import { Modal, List, Tag, Avatar, Space, Typography, Spin, Button, Tooltip, message } from 'antd'
 import {
   CheckCircleOutlined,
@@ -19,15 +19,72 @@ import { useApp } from '../contexts/AppContext'
 
 const { Text } = Typography
 
+const VIEWED_MR_KEY = 'viewed_mr_items'
+
+interface ViewedMRState {
+  [key: string]: boolean
+}
+
 interface RelatedMRModalProps {
   open: boolean
   onClose: () => void
+}
+
+// 获取 MR 的唯一标识 key
+const getMRKey = (item: RelatedMR): string => {
+  return `${item.mr.project_id}_${item.mr.iid}`
+}
+
+// 从 localStorage 读取已查看的 MR 状态
+const getViewedMRs = (): ViewedMRState => {
+  try {
+    const stored = localStorage.getItem(VIEWED_MR_KEY)
+    return stored ? JSON.parse(stored) : {}
+  } catch {
+    return {}
+  }
+}
+
+// 保存已查看的 MR 状态到 localStorage
+const saveViewedMR = (key: string) => {
+  try {
+    const viewed = getViewedMRs()
+    viewed[key] = true
+    localStorage.setItem(VIEWED_MR_KEY, JSON.stringify(viewed))
+  } catch {
+    // ignore storage errors
+  }
+}
+
+// 清理 localStorage 中不再存在的 MR 记录
+const cleanupViewedMRs = (currentItems: RelatedMR[]) => {
+  try {
+    const viewed = getViewedMRs()
+    const currentKeys = new Set(currentItems.map(getMRKey))
+    const cleaned: ViewedMRState = {}
+
+    for (const [key, value] of Object.entries(viewed)) {
+      if (currentKeys.has(key)) {
+        cleaned[key] = value
+      }
+    }
+
+    localStorage.setItem(VIEWED_MR_KEY, JSON.stringify(cleaned))
+  } catch {
+    // ignore storage errors
+  }
 }
 
 const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
   const { setCurrentProject, setCurrentMR } = useApp()
   const [loading, setLoading] = useState(false)
   const [data, setData] = useState<RelatedMR[]>([])
+  const [viewedMRs, setViewedMRs] = useState<ViewedMRState>({})
+
+  // 检查 MR 是否是新的（未查看过）
+  const isNewMR = useCallback((item: RelatedMR): boolean => {
+    return !viewedMRs[getMRKey(item)]
+  }, [viewedMRs])
 
   useEffect(() => {
     if (open) {
@@ -39,6 +96,10 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
     setLoading(true)
     try {
       const result = await api.listRelatedMergeRequests('opened')
+      // 清理 localStorage 中不再存在的 MR 记录
+      cleanupViewedMRs(result)
+      // 更新本地状态
+      setViewedMRs(getViewedMRs())
       setData(result)
     } catch (err: any) {
       message.error(err.response?.data?.detail || err.message || '加载 MR 列表失败')
@@ -49,6 +110,11 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
 
   const handleOpenMR = async (item: RelatedMR) => {
     if (!item.project) return
+
+    // 标记为已查看
+    const key = getMRKey(item)
+    saveViewedMR(key)
+    setViewedMRs(getViewedMRs())
 
     // 切换项目
     setCurrentProject(item.project)
@@ -68,6 +134,10 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
         item.mr.iid
       )
       message.success('已批准')
+      // 标记为已查看
+      const key = getMRKey(item)
+      saveViewedMR(key)
+      setViewedMRs(getViewedMRs())
       // 重新加载数据
       loadData()
     } catch (err: any) {
@@ -176,6 +246,9 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
                     title={
                       <Space>
                         <Text strong>{item.mr.title}</Text>
+                        {isNewMR(item) && (
+                          <Tag color="red">New</Tag>
+                        )}
                         {getStateTag(item.mr.state)}
                         {item.mr.approved_by_current_user && (
                           <Tag icon={<CheckCircleOutlined />} color="success">已批准</Tag>
