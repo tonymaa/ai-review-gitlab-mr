@@ -23,6 +23,30 @@ interface MRListPanelProps {
   onSelectMR: (mr: MergeRequest) => void
 }
 
+// 格式化相对时间（与 CommentPanel 中使用的一致）
+const formatTimeAgo = (dateString: string) => {
+  const date = new Date(dateString)
+  const now = new Date()
+  const seconds = Math.floor((now.getTime() - date.getTime()) / 1000)
+
+  const intervals = {
+    年: 31536000,
+    月: 2592000,
+    周: 604800,
+    天: 86400,
+    小时: 3600,
+    分钟: 60,
+  }
+
+  for (const [unit, secondsInUnit] of Object.entries(intervals)) {
+    const interval = Math.floor(seconds / secondsInUnit)
+    if (interval >= 1) {
+      return `${interval} ${unit}前`
+    }
+  }
+  return '刚刚'
+}
+
 const MRListPanel: FC<MRListPanelProps> = ({
   mergeRequests,
   onSelectMR,
@@ -255,9 +279,17 @@ const MRListPanel: FC<MRListPanelProps> = ({
                         <Text type="secondary" style={{ fontSize: 12 }}>
                           {mr.source_branch} → {mr.target_branch}
                         </Text>
-                        <Text type="secondary" style={{ fontSize: 12 }}>
-                          {mr.author_name}
-                        </Text>
+                        <Space size={4}>
+                          <Text type="secondary" style={{ fontSize: 12 }}>
+                            {mr.author_name}
+                          </Text>
+                          <Text type="secondary" style={{ fontSize: 12 }}>
+                            ·
+                          </Text>
+                          <Text type="secondary" style={{ fontSize: 12 }}>
+                            {formatTimeAgo(mr.created_at)}
+                          </Text>
+                        </Space>
                       </Space>
                     }
                   />
