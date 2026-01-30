@@ -9,7 +9,7 @@ import type { Project } from '../../types'
 import { api } from '../../api/client'
 
 const { Search } = Input
-const { Text, Title } = Typography
+const { Text } = Typography
 
 interface ProjectSelectorModalProps {
   open: boolean

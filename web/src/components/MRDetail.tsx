@@ -2,7 +2,7 @@
  * MR 详情组件
  */
 
-import { FC, useEffect, useState } from 'react'
+import { type FC, useEffect, useState } from 'react'
 import { Card, Tag, Space, Typography, Button, message, Spin, Tooltip } from 'antd'
 import {
   CheckCircleOutlined,
@@ -95,19 +95,6 @@ const MRDetail: FC<MRDetailProps> = ({ project_id, mr, onRefresh }) => {
     const minutes = String(date.getMinutes()).padStart(2, '0')
     const seconds = String(date.getSeconds()).padStart(2, '0')
     return `${year}/${month}/${day} ${hours}:${minutes}:${seconds}`
-  }
-
-  const getStateIcon = () => {
-    switch (mr.state) {
-      case 'opened':
-        return <SyncOutlined spin={false} style={{ color: '#52c41a' }} />
-      case 'closed':
-        return <CloseCircleOutlined style={{ color: '#ff4d4f' }} />
-      case 'merged':
-        return <CheckCircleOutlined style={{ color: '#52c41a' }} />
-      default:
-        return null
-    }
   }
 
   const getStateTag = () => {

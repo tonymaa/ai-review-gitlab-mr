@@ -3,11 +3,11 @@
  */
 
 import { type FC, useState, useMemo } from 'react'
-import { Modal, Form, Input, Button, Tabs, message, Space } from 'antd'
+import { Modal, Form, Input, Button, Tabs, message } from 'antd'
 import { UserOutlined, LockOutlined } from '@ant-design/icons'
 import { useApp } from '../../contexts/AppContext'
 
-const { TabPane } = Tabs
+
 
 interface AuthModalProps {
   open: boolean

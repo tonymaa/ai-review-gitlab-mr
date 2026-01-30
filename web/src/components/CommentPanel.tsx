@@ -2,8 +2,8 @@
  * 评论面板组件
  */
 
-import { FC, useState, useEffect } from 'react'
-import { List, Avatar, Input, Button, Space, Typography, Tag, Empty, Spin, Tabs, Divider, message, Modal, Tooltip } from 'antd'
+import { type FC, useState, useEffect } from 'react'
+import { List, Avatar, Input, Button, Space, Typography, Tag, Empty, Spin, Tabs, message, Modal, Tooltip } from 'antd'
 import {
   MessageOutlined,
   SendOutlined,
@@ -37,7 +37,6 @@ const CommentPanel: FC<CommentPanelProps> = () => {
     loading,
     setLoading,
     jumpToLine,
-    isReviewingAllFiles,
     setIsReviewingAllFiles,
     isReviewingSingleFile,
   } = useApp()
@@ -219,19 +218,22 @@ const CommentPanel: FC<CommentPanelProps> = () => {
             setTimeout(pollResult, 2000)
           } else if ('status' in status && status.status === 'completed') {
             // 完成
-            setAiComments(status.comments)
-            message.success(`AI 审查完成，生成 ${status.comments.length} 条评论`)
+            const completedStatus = status as { status: 'completed'; comments: ReviewComment[] }
+            setAiComments(completedStatus.comments)
+            message.success(`AI 审查完成，生成 ${completedStatus.comments.length} 条评论`)
             setAiReviewing(false)
             setIsReviewingAllFiles(false)
           } else if ('status' in status && status.status === 'error') {
             // 错误
-            message.error(status.error || 'AI 审查失败')
+            const errorStatus = status as { status: 'error'; error: string }
+            message.error(errorStatus.error || 'AI 审查失败')
             setAiReviewing(false)
             setIsReviewingAllFiles(false)
           } else if ('comments' in status) {
             // 兼容旧格式（直接返回结果）
-            setAiComments(status.comments)
-            message.success(`AI 审查完成，生成 ${status.comments.length} 条评论`)
+            const reviewResponse = status as { comments: ReviewComment[] }
+            setAiComments(reviewResponse.comments)
+            message.success(`AI 审查完成，生成 ${reviewResponse.comments.length} 条评论`)
             setAiReviewing(false)
             setIsReviewingAllFiles(false)
           }

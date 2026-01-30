@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  gitlab-ai-review:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: gitlab-ai-review:latest
+    container_name: gitlab-ai-review
+    restart: unless-stopped
+    ports:
+      - "10100:19000"
+    environment:
+      # GitLab Configuration
+      - GITLAB_URL=${GITLAB_URL:-}
+      - GITLAB_TOKEN=${GITLAB_TOKEN:-}
+      
+      # AI Configuration
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://localhost:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-codellama}
+      
+      # App Configuration
+      - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-true}
+    volumes:
+      # Persist data and cache
+      - ./data:/app/data
+      - ./cache:/app/cache
+      - ./logs:/app/logs
+      # Optional: Mount custom config file
+      - ./config.yaml:/app/config.yaml:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:19000/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

@@ -46,7 +46,6 @@ const DiffViewer: FC<DiffViewerProps> = ({
   aiComments = [],
 }) => {
   const {
-    setCurrentDiffFile,
     highlightLine,
     setHighlightLine,
     currentProject,
@@ -367,14 +366,6 @@ const DiffViewer: FC<DiffViewerProps> = ({
     if (file.deleted_file) return <MinusOutlined style={{ color: '#ff4d4f' }} />
     if (file.renamed_file) return <ArrowRightOutlined style={{ color: '#faad14' }} />
     return <FileOutlined />
-  }
-
-  // 获取指定行的 AI 评论
-  const getAICommentsForLine = (lineNumber: number | undefined) => {
-    if (!lineNumber || !diffFile) return []
-    return aiComments.filter(
-      comment => comment.file_path === diffFile.new_path && comment.line_number === lineNumber
-    )
   }
 
   // AI 评论操作函数

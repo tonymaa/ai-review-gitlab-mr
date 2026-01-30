@@ -106,14 +106,12 @@ const MainLayout: FC = () => {
   const {
     currentProject,
     mergeRequests,
-    setMergeRequests,
     currentMR,
     setCurrentMR,
     diffFiles,
     setDiffFiles,
     currentDiffFile,
     setCurrentDiffFile,
-    loading,
     setLoading,
     aiComments,
   } = useApp()

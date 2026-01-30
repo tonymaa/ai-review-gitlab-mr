@@ -2,12 +2,11 @@
  * 配置抽屉组件
  */
 
-import { FC, useState, useEffect } from 'react'
+import { type FC, useState, useEffect } from 'react'
 import { Drawer, Form, Input, Select, Button, Space, Typography, Divider, message, Spin } from 'antd'
-import type { AppConfig } from '../../types'
 import { api } from '../../api/client'
 
-const { Title, Text } = Typography
+const { Title } = Typography
 const { Option } = Select
 
 interface ConfigDrawerProps {

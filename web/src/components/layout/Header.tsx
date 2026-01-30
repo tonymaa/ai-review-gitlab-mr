@@ -14,8 +14,6 @@ import {
   DownOutlined,
   PlusOutlined,
   DeleteOutlined,
-  SunOutlined,
-  MoonOutlined,
   GithubOutlined,
 } from '@ant-design/icons'
 import { useApp } from '../../contexts/AppContext'
@@ -33,7 +31,7 @@ interface HeaderProps {
 }
 
 const Header: FC<HeaderProps> = ({ onOpenConnect, onOpenConfig, onOpenRelatedMR }) => {
-  const { isConnected, user, logout, projects, addProject, removeProject, currentProject, setCurrentProject, theme, toggleTheme } = useApp()
+  const { isConnected, user, logout, projects, addProject, removeProject, currentProject, setCurrentProject } = useApp()
   const [projectModalOpen, setProjectModalOpen] = useState(false)
 
   const handleSelectProject = (project: Project) => {

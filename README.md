@@ -155,6 +155,50 @@ python main.py
 
 启动 PyQt6 桌面应用，提供原生 GUI 界面。
 
+### 方式四：Docker 部署
+
+**使用 Docker Compose（推荐）：**
+
+```bash
+# 1. 配置环境变量
+cp .env.example .env
+# 编辑 .env 文件，填入你的 GitLab Token 和 OpenAI API Key
+
+# 2. 启动服务
+docker-compose up -d
+
+# 3. 查看日志
+docker-compose logs -f
+```
+
+访问地址：`http://localhost:19000`
+
+**使用 Docker 命令行：**
+
+```bash
+# 构建镜像
+docker build -t gitlab-ai-review .
+
+# 运行容器
+docker run -d \
+  --name gitlab-ai-review \
+  -p 19000:19000 \
+  -e GITLAB_URL=https://gitlab.example.com \
+  -e GITLAB_TOKEN=your_token_here \
+  -e OPENAI_API_KEY=your_key_here \
+  -v $(pwd)/data:/app/data \
+  -v $(pwd)/cache:/app/cache \
+  -v $(pwd)/logs:/app/logs \
+  gitlab-ai-review
+```
+
+**数据持久化：**
+
+Docker 版本会将以下数据挂载到宿主机：
+- `./data` - SQLite 数据库
+- `./cache` - 本地缓存
+- `./logs` - 应用日志
+
 ## API 接口
 
 ### 认证接口 `/api/auth`
@@ -212,6 +256,10 @@ gitlab-ai-review/
 ├── .env                   # 环境变量（敏感信息）
 ├── .env.example           # 环境变量示例
 ├── requirements.txt       # Python 依赖
+├── Dockerfile             # Docker 镜像构建文件
+├── docker-compose.yml     # Docker Compose 配置
+├── docker-entrypoint.sh   # Docker 启动脚本
+├── .dockerignore          # Docker 构建忽略文件
 │
 ├── server/                # 后端服务器模块
 │   ├── main.py           # FastAPI 应用创建和配置

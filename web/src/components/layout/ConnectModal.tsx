@@ -2,7 +2,7 @@
  * 连接 GitLab 弹窗组件
  */
 
-import { FC, useState } from 'react'
+import { type FC, useState } from 'react'
 import { Modal, Form, Input, message, Typography } from 'antd'
 import { useApp } from '../../contexts/AppContext'
 

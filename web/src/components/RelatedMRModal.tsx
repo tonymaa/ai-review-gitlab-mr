@@ -2,7 +2,7 @@
  * 与我相关的 MR 弹窗组件
  */
 
-import { FC, useState, useEffect } from 'react'
+import { type FC, useState, useEffect } from 'react'
 import { Modal, List, Tag, Avatar, Space, Typography, Spin, Button, Tooltip, message } from 'antd'
 import {
   CheckCircleOutlined,
@@ -13,7 +13,7 @@ import {
   LinkOutlined,
   ExportOutlined,
 } from '@ant-design/icons'
-import type { RelatedMR, MergeRequest } from '../types'
+import type { RelatedMR } from '../types'
 import { api } from '../api/client'
 import { useApp } from '../contexts/AppContext'
 
