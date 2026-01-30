@@ -93,7 +93,7 @@ const ConfigDrawer: FC<ConfigDrawerProps> = ({ open, onClose }) => {
             model: values.ollama_model,
           },
           review_rules: rulesArray,
-          summary_prompt: values.summary_prompt || undefined,
+          summary_prompt: values.summary_prompt ?? undefined,
         },
       })
 
