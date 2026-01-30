@@ -104,6 +104,10 @@ class AIConfigModel(BaseModel):
         ],
         description="审查规则列表",
     )
+    summary_prompt: Optional[str] = Field(
+        default=None,
+        description="AI 总结提示词模板，支持 {mr_title}, {source_branch}, {target_branch}, {description}, {files_changed}, {diff_content} 变量"
+    )
 
 
 class ConfigResponse(BaseModel):
@@ -160,6 +164,7 @@ async def get_config(
                 model=ai_config["ollama_model"],
             ),
             review_rules=ai_config["review_rules"] or [],
+            summary_prompt=ai_config.get("summary_prompt"),
         )
 
     return ConfigResponse(
@@ -201,6 +206,7 @@ async def update_config(
             ollama_base_url=request.ai.ollama.base_url,
             ollama_model=request.ai.ollama.model,
             review_rules=request.ai.review_rules,
+            summary_prompt=request.ai.summary_prompt,
         )
         logger.info(f"用户 {user_id} 更新了 AI 配置")
 

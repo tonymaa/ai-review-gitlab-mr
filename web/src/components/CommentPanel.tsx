@@ -48,6 +48,7 @@ const CommentPanel: FC<CommentPanelProps> = () => {
   const [activeTab, setActiveTab] = useState('comments')
   const [editingAIComment, setEditingAIComment] = useState<{ index: number; content: string } | null>(null)
   const [sendingAIComment, setSendingAIComment] = useState<number | null>(null)
+  const [aiSummarizing, setAiSummarizing] = useState(false)
 
   // 格式化完整时间为中国习惯格式
   const formatFullTime = (dateString: string) => {
@@ -270,6 +271,32 @@ const CommentPanel: FC<CommentPanelProps> = () => {
       setAiComments(updatedComments)
       setEditingAIComment(null)
       message.success('评论已更新')
+    }
+  }
+
+  // AI 总结处理函数
+  const handleAISummarize = async () => {
+    if (!currentMR || !currentProject) {
+      message.warning('请先选择一个 MR')
+      return
+    }
+
+    setAiSummarizing(true)
+    setCommentInput('') // 清空输入框，准备接收流式输出
+
+    try {
+      await api.summarizeChanges(
+        currentProject.id.toString(),
+        currentMR.iid,
+        (chunk) => {
+          setCommentInput((prev) => prev + chunk)
+        }
+      )
+      message.success('AI 总结完成')
+    } catch (err: any) {
+      message.error(err.message || 'AI 总结失败')
+    } finally {
+      setAiSummarizing(false)
     }
   }
 
@@ -584,23 +611,35 @@ const CommentPanel: FC<CommentPanelProps> = () => {
           onChange={(e) => setCommentInput(e.target.value)}
           autoSize={{ minRows: 2, maxRows: 4 }}
           style={{ marginBottom: 8 }}
+          disabled={aiSummarizing}
         />
         <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-          <Button
-            type="primary"
-            icon={<SendOutlined />}
-            onClick={handlePublishComment}
-            loading={publishing}
-            disabled={!commentInput.trim()}
-            size="small"
-          >
-            发布
-          </Button>
+          <Space>
+            <Button
+              type="primary"
+              icon={<SendOutlined />}
+              onClick={handlePublishComment}
+              loading={publishing}
+              disabled={!commentInput.trim() || aiSummarizing}
+              size="small"
+            >
+              发布
+            </Button>
+            <Button
+              icon={<RobotOutlined />}
+              onClick={handleAISummarize}
+              loading={aiSummarizing}
+              disabled={!currentMR || aiReviewing}
+              size="small"
+            >
+              AI 总结
+            </Button>
+          </Space>
           <Button
             icon={<RobotOutlined />}
             onClick={handleAIReview}
             loading={aiReviewing}
-            disabled={!currentMR || isReviewingSingleFile}
+            disabled={!currentMR || isReviewingSingleFile || aiSummarizing}
             size="small"
           >
             AI 审查全部文件

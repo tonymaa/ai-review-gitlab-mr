@@ -46,6 +46,7 @@ export interface AIConfig {
   openai: OpenAIConfig;
   ollama: OllamaConfig;
   review_rules: string[];
+  summary_prompt?: string;
 }
 
 /** 应用配置 */

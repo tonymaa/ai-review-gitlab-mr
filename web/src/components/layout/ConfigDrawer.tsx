@@ -53,6 +53,7 @@ const ConfigDrawer: FC<ConfigDrawerProps> = ({ open, onClose }) => {
         ollama_base_url: config.ai?.ollama?.base_url || 'http://localhost:11434',
         ollama_model: config.ai?.ollama?.model || 'codellama',
         review_rules: config.ai?.review_rules?.join('\n') || '',
+        summary_prompt: config.ai?.summary_prompt || '',
       })
     } catch (err) {
       console.error('Failed to load config:', err)
@@ -92,6 +93,7 @@ const ConfigDrawer: FC<ConfigDrawerProps> = ({ open, onClose }) => {
             model: values.ollama_model,
           },
           review_rules: rulesArray,
+          summary_prompt: values.summary_prompt || undefined,
         },
       })
 
@@ -226,6 +228,17 @@ const ConfigDrawer: FC<ConfigDrawerProps> = ({ open, onClose }) => {
             <Input.TextArea
               rows={6}
               placeholder="检查代码是否符合PEP8规范&#10;检查是否有潜在的安全漏洞"
+            />
+          </Form.Item>
+
+          <Form.Item
+            label="AI 总结提示词"
+            name="summary_prompt"
+            tooltip="支持变量: {mr_title}, {source_branch}, {target_branch}, {description}, {files_changed}, {diff_content}。留空使用默认提示词。"
+          >
+            <Input.TextArea
+              rows={4}
+              placeholder="请总结以下 Merge Request 的改动：\n\n标题: {mr_title}\n分支: {source_branch} → {target_branch}\n\n{diff_content}\n\n请用中文总结主要变更点："
             />
           </Form.Item>
         </Form>

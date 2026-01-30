@@ -6,10 +6,11 @@
 import logging
 import sys
 from pathlib import Path
-from typing import List
+from typing import List, AsyncGenerator
 
-from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 # 添加项目根目录到 Python 路径
@@ -17,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.gitlab.client import GitLabClient
 from src.gitlab.models import MergeRequestInfo, DiffFile
-from src.ai.reviewer import create_reviewer
+from src.ai.reviewer import create_reviewer, OpenAIReviewer
 from src.core.database import DatabaseManager
 from src.core.auth import verify_token
 from src.core.exceptions import (
@@ -478,3 +479,124 @@ async def get_ai_config(
         },
         "review_rules": ai_config.get("review_rules", []),
     }
+
+
+# ==================== AI Summary 流式总结 ====================
+
+async def stream_summarize(
+    client: GitLabClient,
+    project_id: str,
+    mr_iid: int,
+    config: dict,
+    ai_config: dict,
+) -> AsyncGenerator[str, None]:
+    """流式生成 MR diff 总结"""
+    try:
+        # 获取 MR 信息和 diffs
+        mr = client.get_merge_request(project_id, mr_iid)
+        diff_files = client.get_merge_request_diffs(project_id, mr_iid)
+
+        # 构建 diff 内容
+        diff_content_list = []
+        files_summary = []
+
+        for df in diff_files:
+            change_type = "A" if df.new_file else "D" if df.deleted_file else "M"
+            files_summary.append(f"{change_type} {df.get_display_path()}")
+            diff_content_list.append(f"\n=== {change_type} {df.get_display_path()} ===\n")
+            diff_content_list.append(df.diff[:5000])  # 限制每个文件的大小
+
+        full_diff = "\n".join(diff_content_list)
+        files_changed_str = "\n".join(files_summary)
+
+        # 获取用户配置的总结提示词，或使用默认提示词
+        summary_prompt = ai_config.get("summary_prompt")
+        if summary_prompt:
+            # 使用用户自定义提示词，替换变量
+            prompt = summary_prompt.format(
+                mr_title=mr.title,
+                source_branch=mr.source_branch,
+                target_branch=mr.target_branch,
+                description=mr.description or "",
+                files_changed=files_changed_str,
+                diff_content=full_diff,
+            )
+        else:
+            # 使用默认提示词
+            desc_part = f"Description:\n{mr.description}\n" if mr.description else ""
+            prompt = f"""请总结以下 Merge Request 的改动。用简洁的语言描述主要变更点：
+
+Merge Request: {mr.title}
+Source: {mr.source_branch} → Target: {mr.target_branch}
+{desc_part}Files changed ({len(diff_files)}):
+{files_changed_str}
+
+{full_diff}
+
+请用英文总结："""
+
+        # 创建审查器并调用流式 API
+        reviewer = create_reviewer(**config)
+
+        if isinstance(reviewer, OpenAIReviewer):
+            import asyncio
+            messages = [
+                {"role": "system", "content": "你是一个代码审查助手，擅长总结代码改动。"},
+                {"role": "user", "content": prompt},
+            ]
+
+            # 使用审查器的流式 API
+            stream = await reviewer.client.chat.completions.create(
+                model=reviewer.model,
+                messages=messages,
+                temperature=reviewer.temperature,
+                max_tokens=reviewer.max_tokens,
+                stream=True,
+            )
+
+            async for chunk in stream:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    content = chunk.choices[0].delta.content
+                    yield content
+        else:
+            # 非 OpenAI 提供商，直接返回总结
+            yield "当前仅支持 OpenAI 提供商进行流式总结"
+
+    except Exception as e:
+        logger.error(f"流式总结失败: {e}", exc_info=True)
+        yield f"\n[错误: {str(e)}]"
+
+
+@router.get("/summarize")
+async def summarize_changes(
+    project_id: str = Query(..., description="项目 ID"),
+    mr_iid: int = Query(..., description="MR IID"),
+    provider: str = Query("openai", description="AI 提供商"),
+    user_id: int = Depends(get_current_user_id),
+    db: DatabaseManager = Depends(get_db),
+    client: GitLabClient = Depends(get_gitlab_client),
+):
+    """流式总结 MR 的所有 diff 改动"""
+    # 获取用户的 AI 配置
+    ai_config = db.get_ai_config(user_id)
+    if not ai_config:
+        raise HTTPException(status_code=400, detail="请先配置 AI")
+
+    if provider == "openai" and not ai_config.get("openai_api_key"):
+        raise HTTPException(status_code=400, detail="OpenAI API Key 未配置")
+
+    # 构建配置
+    config = _build_review_config(ai_config, provider)
+
+    async def event_generator():
+        async for chunk in stream_summarize(client, project_id, mr_iid, config, ai_config):
+            yield chunk
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/plain",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        },
+    )

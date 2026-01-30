@@ -1,6 +1,7 @@
 """数据库模块 - 使用SQLAlchemy进行本地数据存储"""
 
 import json
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, List, Any
@@ -25,6 +26,9 @@ from passlib.context import CryptContext
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 Base = declarative_base()
+
+# 日志记录器
+logger = logging.getLogger(__name__)
 
 # 使用带时区的当前时间函数
 def now_utc():
@@ -105,6 +109,9 @@ class AIConfig(Base):
 
     # 审查规则 (JSON 格式存储)
     review_rules = Column(Text, nullable=True)
+
+    # AI 总结提示词
+    summary_prompt = Column(Text, nullable=True)
 
     created_at = Column(DateTime, default=now_utc)
     updated_at = Column(DateTime, default=now_utc, onupdate=now_utc)
@@ -263,9 +270,29 @@ class DatabaseManager:
         # 创建表
         self._create_tables()
 
+        # 运行迁移
+        self._run_migrations()
+
     def _create_tables(self):
         """创建数据库表"""
         Base.metadata.create_all(bind=self.engine)
+
+    def _run_migrations(self):
+        """运行数据库迁移"""
+        from sqlalchemy import inspect, text
+        inspector = inspect(self.engine)
+
+        # 检查 ai_configs 表是否存在 summary_prompt 列
+        if 'ai_configs' in inspector.get_table_names():
+            columns = [col['name'] for col in inspector.get_columns('ai_configs')]
+            if 'summary_prompt' not in columns:
+                try:
+                    with self.engine.connect() as conn:
+                        conn.execute(text("ALTER TABLE ai_configs ADD COLUMN summary_prompt TEXT"))
+                        conn.commit()
+                    logger.info("已添加 summary_prompt 列到 ai_configs 表")
+                except Exception as e:
+                    logger.warning(f"添加 summary_prompt 列失败: {e}")
 
     @contextmanager
     def get_session(self) -> Session:
@@ -617,6 +644,7 @@ class DatabaseManager:
         ollama_base_url: str = "http://localhost:11434",
         ollama_model: str = "codellama",
         review_rules: Optional[List[str]] = None,
+        summary_prompt: Optional[str] = None,
     ) -> AIConfig:
         """创建或更新 AI 配置"""
         with self.get_session() as session:
@@ -644,6 +672,8 @@ class DatabaseManager:
                 existing.ollama_base_url = ollama_base_url
                 existing.ollama_model = ollama_model
                 existing.review_rules = rules_json
+                if summary_prompt is not None:
+                    existing.summary_prompt = summary_prompt
                 existing.updated_at = now_utc()
                 session.merge(existing)
                 session.flush()
@@ -662,6 +692,7 @@ class DatabaseManager:
                     ollama_base_url=ollama_base_url,
                     ollama_model=ollama_model,
                     review_rules=rules_json,
+                    summary_prompt=summary_prompt,
                 )
                 session.add(config)
                 session.flush()
@@ -699,6 +730,7 @@ class DatabaseManager:
                 "ollama_base_url": config.ollama_base_url,
                 "ollama_model": config.ollama_model,
                 "review_rules": review_rules or [],
+                "summary_prompt": config.summary_prompt,
                 "created_at": config.created_at.isoformat() if config.created_at else None,
                 "updated_at": config.updated_at.isoformat() if config.updated_at else None,
             }

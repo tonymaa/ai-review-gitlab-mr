@@ -299,6 +299,51 @@ class APIClient {
     const response = await this.client.get('/ai/config');
     return response.data;
   }
+
+  // ==================== AI Summary ====================
+
+  /**
+   * 流式总结 MR 的所有 diff 改动
+   * @param projectId 项目 ID
+   * @param mrIid MR IID
+   * @param onChunk 每次接收到数据时的回调
+   * @param provider AI 提供商
+   */
+  async summarizeChanges(
+    projectId: string,
+    mrIid: number,
+    onChunk: (chunk: string) => void,
+    provider: string = 'openai'
+  ): Promise<void> {
+    const response = await fetch(`/api/ai/summarize?project_id=${projectId}&mr_iid=${mrIid}&provider=${provider}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${this.token}`,
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ detail: '请求失败' }));
+      throw new Error(errorData.detail || `HTTP ${response.status}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('无法读取响应流');
+    }
+
+    const decoder = new TextDecoder();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        onChunk(chunk);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
 }
 
 // 单例实例
