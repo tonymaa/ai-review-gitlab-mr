@@ -2,8 +2,8 @@
  * MR 列表面板组件
  */
 
-import { type FC, useState, useEffect } from 'react'
-import { List, Tag, Input, Select, Space, Typography, Empty, Spin, Badge, Tooltip } from 'antd'
+import React, { type FC, useState, useEffect, useMemo } from 'react'
+import { List, Tag, Input, Select, Space, Typography, Empty, Spin, Badge, Tooltip, Checkbox } from 'antd'
 import {
   ClockCircleOutlined,
   CloseCircleOutlined,
@@ -27,9 +27,11 @@ const MRListPanel: FC<MRListPanelProps> = ({
   mergeRequests,
   onSelectMR,
 }) => {
-  const { currentProject, currentMR, setCurrentMR, setMergeRequests, setError } = useApp()
+  const { currentProject, currentMR, setCurrentMR, setMergeRequests, setError, currentUser } = useApp()
   const [searchText, setSearchText] = useState('')
   const [stateFilter, setStateFilter] = useState<'opened' | 'closed' | 'merged' | 'all'>('opened')
+  const [relatedToMe, setRelatedToMe] = useState(false)
+  const [authorFilter, setAuthorFilter] = useState<string>('')
   const [listLoading, setListLoading] = useState(false)
 
   // 当项目变化时加载 MR 列表
@@ -62,15 +64,50 @@ const MRListPanel: FC<MRListPanelProps> = ({
     }
   }
 
+  // 获取所有作者列表（去重），并将当前用户排在最前面
+  const authors = useMemo(() => {
+    const authorSet = new Set<string>()
+    mergeRequests.forEach(mr => {
+      if (mr.author_name) {
+        authorSet.add(mr.author_name)
+      }
+    })
+    let authorList = Array.from(authorSet).sort()
+
+    // 将当前用户排在最前面
+    if (currentUser?.name && authorList.includes(currentUser.name)) {
+      authorList = authorList.filter(name => name !== currentUser.name)
+      authorList.unshift(currentUser.name)
+    }
+
+    return authorList
+  }, [mergeRequests, currentUser])
+
   const filteredMRs = mergeRequests.filter(mr => {
-    if (!searchText) return true
-    const searchLower = searchText.toLowerCase()
-    return (
-      mr.title.toLowerCase().includes(searchLower) ||
-      mr.author_name.toLowerCase().includes(searchLower) ||
-      mr.source_branch.toLowerCase().includes(searchLower) ||
-      mr.target_branch.toLowerCase().includes(searchLower)
-    )
+    // 搜索文本筛选
+    if (searchText) {
+      const searchLower = searchText.toLowerCase()
+      const matchesSearch =
+        mr.title.toLowerCase().includes(searchLower) ||
+        mr.author_name.toLowerCase().includes(searchLower) ||
+        mr.source_branch.toLowerCase().includes(searchLower) ||
+        mr.target_branch.toLowerCase().includes(searchLower)
+      if (!matchesSearch) return false
+    }
+
+    // "与我相关"筛选（reviewer或assignee包含当前用户）
+    if (relatedToMe && currentUser) {
+      const isReviewer = mr.reviewers?.some(r => r.name === currentUser.name || r.id === currentUser.id)
+      const isAssignee = mr.assignees?.some(a => a.name === currentUser.name || a.id === currentUser.id)
+      if (!isReviewer && !isAssignee) return false
+    }
+
+    // 作者筛选
+    if (authorFilter && mr.author_name !== authorFilter) {
+      return false
+    }
+
+    return true
   })
 
   const getStateTag = (state: string) => {
@@ -135,6 +172,31 @@ const MRListPanel: FC<MRListPanelProps> = ({
                 全部
               </Badge>
             </Option>
+          </Select>
+
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <Checkbox
+              checked={relatedToMe}
+              onChange={(e) => setRelatedToMe(e.target.checked)}
+              disabled={!currentProject || !currentUser}
+            >
+              与我相关
+            </Checkbox>
+          </div>
+
+          <Select
+            placeholder="筛选作者"
+            value={authorFilter || undefined}
+            onChange={setAuthorFilter}
+            style={{ width: '100%' }}
+            disabled={!currentProject}
+            allowClear
+          >
+            {authors.map(author => (
+              <Option key={author} value={author}>
+                {author} {author === currentUser?.name ? '(我)' : ''}
+              </Option>
+            ))}
           </Select>
         </Space>
       </div>
