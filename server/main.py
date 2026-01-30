@@ -98,7 +98,7 @@ def create_app() -> FastAPI:
 app = create_app()
 
 
-def run_server(host: str = "127.0.0.1", port: int = 8000, reload: bool = False):
+def run_server(host: str = "0.0.0.0", port: int = 8000, reload: bool = False):
     """运行服务器"""
     uvicorn.run(
         "server.main:app",

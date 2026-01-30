@@ -32,8 +32,8 @@ def main():
     parser = argparse.ArgumentParser(description="GitLab AI Review Web Server")
     parser.add_argument(
         "--host",
-        default="127.0.0.1",
-        help="绑定的主机地址 (默认: 127.0.0.1)"
+        default="0.0.0.0",
+        help="绑定的主机地址 (默认: 0.0.0.0)"
     )
     parser.add_argument(
         "--port",
