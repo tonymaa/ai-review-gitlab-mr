@@ -96,4 +96,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 ENTRYPOINT ["docker-entrypoint.sh"]
 
 # Start the server
-CMD ["python", "server.py", "--host", "0.0.0.0", "--port", "19000"]
+CMD ["python", "server.py", "--port", "19000"]
