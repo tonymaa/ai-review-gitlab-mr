@@ -206,6 +206,7 @@ const MRListPanel: FC<MRListPanelProps> = ({
             style={{ width: '100%' }}
             disabled={!currentProject}
             allowClear
+            showSearch
           >
             {authors.map(author => (
               <Option key={author} value={author}>
