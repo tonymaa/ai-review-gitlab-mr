@@ -76,7 +76,12 @@ const cleanupViewedMRs = (currentItems: RelatedMR[]) => {
 }
 
 const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
-  const { setCurrentProject, setCurrentMR } = useApp()
+  const {
+    setCurrentProject,
+    setCurrentMR,
+    setMrListFilterRelated,
+    setMrListFilterState
+  } = useApp()
   const [loading, setLoading] = useState(false)
   const [data, setData] = useState<RelatedMR[]>([])
   const [viewedMRs, setViewedMRs] = useState<ViewedMRState>({})
@@ -121,6 +126,10 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
 
     // 设置当前 MR
     setCurrentMR(item.mr)
+
+    // 设置左侧 MR 列表的筛选状态：勾选"与我相关"，状态切到 opened
+    setMrListFilterRelated(true)
+    setMrListFilterState('opened')
 
     onClose()
   }

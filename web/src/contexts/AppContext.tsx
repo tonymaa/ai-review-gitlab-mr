@@ -81,6 +81,12 @@ interface AppContextType {
   // 错误消息
   error: string | null;
   setError: (error: string | null) => void;
+
+  // MR 列表筛选状态
+  mrListFilterRelated: boolean;
+  setMrListFilterRelated: (value: boolean) => void;
+  mrListFilterState: 'opened' | 'closed' | 'merged' | 'all';
+  setMrListFilterState: (value: 'opened' | 'closed' | 'merged' | 'all') => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -114,6 +120,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [allowRegistration, setAllowRegistration] = useState(true);
+
+  // MR 列表筛选状态
+  const [mrListFilterRelated, setMrListFilterRelated] = useState(false);
+  const [mrListFilterState, setMrListFilterState] = useState<'opened' | 'closed' | 'merged' | 'all'>('opened');
 
   // 标记是否已从 localStorage 加载
   const [loadedFromStorage, setLoadedFromStorage] = useState(false);
@@ -384,6 +394,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setLoading,
     error,
     setError,
+
+    // MR 列表筛选状态
+    mrListFilterRelated,
+    setMrListFilterRelated,
+    mrListFilterState,
+    setMrListFilterState,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

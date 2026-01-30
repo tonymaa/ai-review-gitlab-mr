@@ -27,10 +27,11 @@ const MRListPanel: FC<MRListPanelProps> = ({
   mergeRequests,
   onSelectMR,
 }) => {
-  const { currentProject, currentMR, setCurrentMR, setMergeRequests, setError, currentUser } = useApp()
+  const {
+    currentProject, currentMR, setCurrentMR, setMergeRequests, setError, currentUser,
+    mrListFilterRelated, setMrListFilterRelated, mrListFilterState, setMrListFilterState
+  } = useApp()
   const [searchText, setSearchText] = useState('')
-  const [stateFilter, setStateFilter] = useState<'opened' | 'closed' | 'merged' | 'all'>('opened')
-  const [relatedToMe, setRelatedToMe] = useState(false)
   const [authorFilter, setAuthorFilter] = useState<string>('')
   const [listLoading, setListLoading] = useState(false)
 
@@ -43,7 +44,7 @@ const MRListPanel: FC<MRListPanelProps> = ({
       setCurrentMR(null)
       setMergeRequests([])
     }
-  }, [currentProject, stateFilter, setCurrentMR, setMergeRequests])
+  }, [currentProject, mrListFilterState, setCurrentMR, setMergeRequests])
 
   const loadMergeRequests = async () => {
     if (!currentProject) return
@@ -52,7 +53,7 @@ const MRListPanel: FC<MRListPanelProps> = ({
     try {
       const mrs = await api.listMergeRequests(
         currentProject.id.toString(),
-        stateFilter
+        mrListFilterState
       )
       setMergeRequests(mrs)
     } catch (err: any) {
@@ -96,7 +97,7 @@ const MRListPanel: FC<MRListPanelProps> = ({
     }
 
     // "与我相关"筛选（reviewer或assignee包含当前用户）
-    if (relatedToMe && currentUser) {
+    if (mrListFilterRelated && currentUser) {
       const isReviewer = mr.reviewers?.some(r => r.name === currentUser.name || r.id === currentUser.id)
       const isAssignee = mr.assignees?.some(a => a.name === currentUser.name || a.id === currentUser.id)
       if (!isReviewer && !isAssignee) return false
@@ -147,8 +148,8 @@ const MRListPanel: FC<MRListPanelProps> = ({
           />
 
           <Select
-            value={stateFilter}
-            onChange={setStateFilter}
+            value={mrListFilterState}
+            onChange={setMrListFilterState}
             style={{ width: '100%' }}
             disabled={!currentProject}
           >
@@ -176,8 +177,8 @@ const MRListPanel: FC<MRListPanelProps> = ({
 
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <Checkbox
-              checked={relatedToMe}
-              onChange={(e) => setRelatedToMe(e.target.checked)}
+              checked={mrListFilterRelated}
+              onChange={(e) => setMrListFilterRelated(e.target.checked)}
               disabled={!currentProject || !currentUser}
             >
               与我相关
