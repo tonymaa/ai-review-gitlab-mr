@@ -27,7 +27,7 @@ const MRListPanel: FC<MRListPanelProps> = ({
   mergeRequests,
   onSelectMR,
 }) => {
-  const { currentProject, setCurrentMR, setMergeRequests, setError } = useApp()
+  const { currentProject, currentMR, setCurrentMR, setMergeRequests, setError } = useApp()
   const [searchText, setSearchText] = useState('')
   const [stateFilter, setStateFilter] = useState<'opened' | 'closed' | 'merged' | 'all'>('opened')
   const [listLoading, setListLoading] = useState(false)
@@ -164,6 +164,7 @@ const MRListPanel: FC<MRListPanelProps> = ({
                     padding: '12px',
                     borderBottom: '1px solid #303030',
                     cursor: 'pointer',
+                    backgroundColor: currentMR?.iid === mr.iid ? '#1a3a5c' : 'transparent',
                   }}
                   onClick={() => onSelectMR(mr)}
                 >
