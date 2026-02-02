@@ -153,8 +153,6 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
       const key = getMRKey(item)
       saveViewedMR(key)
       setViewedMRs(getViewedMRs())
-      // 重新加载数据
-      loadData()
     } catch (err: any) {
       message.error(err.response?.data?.detail || err.message || '批准失败')
     }
@@ -170,7 +168,6 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
       )
       message.success('已取消批准')
       // 重新加载数据
-      loadData()
     } catch (err: any) {
       message.error(err.response?.data?.detail || err.message || '取消批准失败')
     }
@@ -199,11 +196,6 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
       const key = getMRKey(item)
       saveViewedMR(key)
       setViewedMRs(getViewedMRs())
-
-      // 刷新 MR 列表
-      const result = await api.listRelatedMergeRequests('opened')
-      cleanupViewedMRs(result)
-      setData(result)
     } catch (err: any) {
       message.error(err.response?.data?.detail || err.message || '发送失败')
     }
