@@ -4,6 +4,31 @@
 
 import { type FC, useState, useEffect, useCallback } from 'react'
 import { Modal, List, Tag, Avatar, Space, Typography, Spin, Button, Tooltip, message } from 'antd'
+import type { ButtonProps } from 'antd/es/button'
+
+// 带自动 loading 状态的按钮组件
+interface LoadingButtonProps extends Omit<ButtonProps, 'onClick'> {
+  onClick: () => Promise<void> | void
+}
+
+const LoadingButton: FC<LoadingButtonProps> = ({ onClick, children, ...props }) => {
+  const [loading, setLoading] = useState(false)
+
+  const handleClick = async () => {
+    setLoading(true)
+    try {
+      await onClick()
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <Button {...props} loading={loading} onClick={handleClick}>
+      {children}
+    </Button>
+  )
+}
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
@@ -312,28 +337,28 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
 
                 {/* 底部操作按钮 */}
                 <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                  <Button
+                  <LoadingButton
                     size="small"
                     onClick={() => handleSendLGTM(item)}
                   >
                     发送lgtm并批准
-                  </Button>
+                  </LoadingButton>
                   {item.mr.approved_by_current_user ? (
-                    <Button
+                    <LoadingButton
                       size="small"
                       danger
                       onClick={() => handleUnapprove(item)}
                     >
                       取消批准
-                    </Button>
+                    </LoadingButton>
                   ) : (
-                    <Button
+                    <LoadingButton
                       size="small"
                       type="primary"
                       onClick={() => handleApprove(item)}
                     >
                       批准
-                    </Button>
+                    </LoadingButton>
                   )}
                   <Button
                     size="small"
