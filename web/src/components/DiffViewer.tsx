@@ -675,36 +675,39 @@ const DiffViewer: FC<DiffViewerProps> = ({
                 const commentsByLineIndex = new Map<number, ReviewComment[]>()
 
                 // 第一遍历：优先将评论分配给新增行
-                aiComments.forEach(comment => {
-                  const commentKey = `${comment.file_path}-${comment.line_number}-${comment.content.slice(0, 20)}`
-                  if (renderedComments.has(commentKey)) return
+                // 只处理属于当前文件的评论
+                aiComments
+                  .filter(comment => comment.file_path === diffFile.new_path)
+                  .forEach(comment => {
+                    const commentKey = `${comment.file_path}-${comment.line_number}-${comment.content.slice(0, 20)}`
+                    if (renderedComments.has(commentKey)) return
 
-                  // 优先在新增行中查找匹配的行号
-                  const additionLineIndex = diffLines.findIndex(line =>
-                    line.type === 'addition' && line.newNumber === comment.line_number
-                  )
-
-                  if (additionLineIndex !== -1) {
-                    // 找到新增行，分配评论
-                    if (!commentsByLineIndex.has(additionLineIndex)) {
-                      commentsByLineIndex.set(additionLineIndex, [])
-                    }
-                    commentsByLineIndex.get(additionLineIndex)!.push(comment)
-                    renderedComments.add(commentKey)
-                  } else {
-                    // 如果没有新增行匹配，尝试在删除行中查找
-                    const deletionLineIndex = diffLines.findIndex(line =>
-                      line.type === 'deletion' && line.oldNumber === comment.line_number
+                    // 优先在新增行中查找匹配的行号
+                    const additionLineIndex = diffLines.findIndex(line =>
+                      line.type === 'addition' && line.newNumber === comment.line_number
                     )
-                    if (deletionLineIndex !== -1) {
-                      if (!commentsByLineIndex.has(deletionLineIndex)) {
-                        commentsByLineIndex.set(deletionLineIndex, [])
+
+                    if (additionLineIndex !== -1) {
+                      // 找到新增行，分配评论
+                      if (!commentsByLineIndex.has(additionLineIndex)) {
+                        commentsByLineIndex.set(additionLineIndex, [])
                       }
-                      commentsByLineIndex.get(deletionLineIndex)!.push(comment)
+                      commentsByLineIndex.get(additionLineIndex)!.push(comment)
                       renderedComments.add(commentKey)
+                    } else {
+                      // 如果没有新增行匹配，尝试在删除行中查找
+                      const deletionLineIndex = diffLines.findIndex(line =>
+                        line.type === 'deletion' && line.oldNumber === comment.line_number
+                      )
+                      if (deletionLineIndex !== -1) {
+                        if (!commentsByLineIndex.has(deletionLineIndex)) {
+                          commentsByLineIndex.set(deletionLineIndex, [])
+                        }
+                        commentsByLineIndex.get(deletionLineIndex)!.push(comment)
+                        renderedComments.add(commentKey)
+                      }
                     }
-                  }
-                })
+                  })
 
                 // 第二遍历：渲染 diff 行和对应的 AI 评论
                 return diffLines.map((line, index) => {
