@@ -180,12 +180,30 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
     if (!item.project) return
 
     try {
+      // 发送 lgtm 评论
       await api.createMergeRequestNote(
         item.project.id.toString(),
         item.mr.iid,
         { body: 'lgtm' }
       )
-      message.success('已发送 lgtm')
+
+      // 同时批准 MR
+      await api.approveMergeRequest(
+        item.project.id.toString(),
+        item.mr.iid
+      )
+
+      message.success('已发送 lgtm 并批准')
+
+      // 标记为已查看
+      const key = getMRKey(item)
+      saveViewedMR(key)
+      setViewedMRs(getViewedMRs())
+
+      // 刷新 MR 列表
+      const result = await api.listRelatedMergeRequests('opened')
+      cleanupViewedMRs(result)
+      setData(result)
     } catch (err: any) {
       message.error(err.response?.data?.detail || err.message || '发送失败')
     }
@@ -306,7 +324,7 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
                     size="small"
                     onClick={() => handleSendLGTM(item)}
                   >
-                    发送 lgtm
+                    发送lgtm并批准
                   </Button>
                   {item.mr.approved_by_current_user ? (
                     <Button
