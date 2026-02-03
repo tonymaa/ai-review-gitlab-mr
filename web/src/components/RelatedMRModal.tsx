@@ -267,11 +267,11 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
     if (!item.project) return
 
     try {
-      // 发送 lgtm 评论
+      // 发送 LGTM 评论
       await api.createMergeRequestNote(
         item.project.id.toString(),
         item.mr.iid,
-        { body: 'lgtm' }
+        { body: 'LGTM' }
       )
 
       // 同时批准 MR
@@ -280,7 +280,7 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
         item.mr.iid
       )
 
-      message.success('已发送 lgtm 并批准')
+      message.success('已发送 LGTM 并批准')
 
       // 标记为已查看和已批准
       const key = getMRKey(item)
@@ -408,7 +408,7 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
                     size="small"
                     onClick={() => handleSendLGTM(item)}
                   >
-                    发送lgtm并批准
+                    发送LGTM并批准
                   </LoadingButton>
                   {approvedMRs[getMRKey(item)] ? (
                     <LoadingButton
