@@ -98,6 +98,8 @@ const CommentPanel: FC<CommentPanelProps> = () => {
     }
     // 清空 AI 评论
     setAiComments([])
+    // 清空评论输入框
+    setCommentInput('')
   }, [currentMR, currentProject, setNotes, setAiComments])
 
   const loadNotes = async () => {
