@@ -15,7 +15,6 @@ import {
   CheckOutlined,
   ArrowRightOutlined,
   ExpandOutlined,
-  NodeCollapseOutlined,
   ShrinkOutlined,
 } from '@ant-design/icons'
 import ReactMarkdown from 'react-markdown'
@@ -27,7 +26,7 @@ import MRDetail from './MRDetail'
 const { TextArea } = Input
 const { Text, Paragraph } = Typography
 
-interface CommentPanelProps {}
+type CommentPanelProps = object
 
 const CommentPanel: FC<CommentPanelProps> = () => {
   const {
