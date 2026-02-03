@@ -14,7 +14,11 @@ import {
   CloseOutlined,
   CheckOutlined,
   ArrowRightOutlined,
+  ExpandOutlined,
+  NodeCollapseOutlined,
+  ShrinkOutlined,
 } from '@ant-design/icons'
+import ReactMarkdown from 'react-markdown'
 import type { Note, ReviewComment } from '../types'
 import { api } from '../api/client'
 import { useApp } from '../contexts/AppContext'
@@ -48,6 +52,7 @@ const CommentPanel: FC<CommentPanelProps> = () => {
   const [editingAIComment, setEditingAIComment] = useState<{ index: number; content: string } | null>(null)
   const [sendingAIComment, setSendingAIComment] = useState<number | null>(null)
   const [aiSummarizing, setAiSummarizing] = useState(false)
+  const [expandModalVisible, setExpandModalVisible] = useState(false)
 
   // 格式化完整时间为中国习惯格式
   const formatFullTime = (dateString: string) => {
@@ -607,14 +612,30 @@ const CommentPanel: FC<CommentPanelProps> = () => {
 
       {/* 头部：输入框和操作 */}
       <div style={{ padding: '12px', borderBottom: '1px solid #303030' }}>
-        <TextArea
-          placeholder="添加评论..."
-          value={commentInput}
-          onChange={(e) => setCommentInput(e.target.value)}
-          autoSize={{ minRows: 2, maxRows: 4 }}
-          style={{ marginBottom: 8 }}
-          disabled={aiSummarizing}
-        />
+        <div style={{ position: 'relative', marginBottom: 8 }}>
+          <TextArea
+            placeholder="添加评论..."
+            value={commentInput}
+            onChange={(e) => setCommentInput(e.target.value)}
+            autoSize={{ minRows: 2, maxRows: 4 }}
+            disabled={aiSummarizing}
+          />
+          <Tooltip title="放大编辑">
+            <Button
+              type="text"
+              size="small"
+              icon={<ExpandOutlined />}
+              onClick={() => setExpandModalVisible(true)}
+              style={{
+                position: 'absolute',
+                right: 8,
+                bottom: 8,
+                zIndex: 1,
+                opacity: 0.6,
+              }}
+            />
+          </Tooltip>
+        </div>
         <Space style={{ width: '100%', justifyContent: 'space-between' }}>
           <Space>
             <Button
@@ -732,6 +753,51 @@ const CommentPanel: FC<CommentPanelProps> = () => {
           ]}
         />
       </div>
+
+      {/* 放大编辑模态框 */}
+      <Modal
+        title="编辑评论"
+        open={expandModalVisible}
+        onCancel={() => setExpandModalVisible(false)}
+        onOk={() => setExpandModalVisible(false)}
+        width={1200}
+        styles={{ body: { padding: '16px 0' } }}
+        footer={[]}
+        closeIcon={<ShrinkOutlined />}
+      >
+        <div style={{ display: 'flex', gap: 16, height: 500 }}>
+          {/* 左侧编辑区 */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ fontSize: 12, color: '#999', marginBottom: 8 }}>编辑 (Markdown)</div>
+            <TextArea
+              value={commentInput}
+              onChange={(e) => setCommentInput(e.target.value)}
+              style={{ flex: 1, resize: 'none' }}
+              placeholder="在此输入评论内容，支持 Markdown 格式..."
+              disabled={aiSummarizing}
+            />
+          </div>
+          {/* 右侧预览区 */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div style={{ fontSize: 12, color: '#999', marginBottom: 8 }}>预览</div>
+            <div style={{
+              flex: 1,
+              overflowY: 'auto',
+              padding: 12,
+              background: '#1f1f1f',
+              borderRadius: 6,
+              border: '1px solid #303030',
+              fontSize: 14,
+            }}>
+              {commentInput ? (
+                <ReactMarkdown>{commentInput}</ReactMarkdown>
+              ) : (
+                <div style={{ color: '#666', fontStyle: 'italic' }}>暂无内容，在左侧输入以预览...</div>
+              )}
+            </div>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }
