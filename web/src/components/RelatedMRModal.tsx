@@ -45,8 +45,13 @@ import { useApp } from '../contexts/AppContext'
 const { Text } = Typography
 
 const VIEWED_MR_KEY = 'viewed_mr_items'
+const APPROVED_MR_KEY = 'approved_mr_items'
 
 interface ViewedMRState {
+  [key: string]: boolean
+}
+
+interface ApprovedMRState {
   [key: string]: boolean
 }
 
@@ -100,6 +105,57 @@ const cleanupViewedMRs = (currentItems: RelatedMR[]) => {
   }
 }
 
+// 从 localStorage 读取已批准的 MR 状态
+const getApprovedMRs = (): ApprovedMRState => {
+  try {
+    const stored = localStorage.getItem(APPROVED_MR_KEY)
+    return stored ? JSON.parse(stored) : {}
+  } catch {
+    return {}
+  }
+}
+
+// 保存已批准的 MR 状态到 localStorage
+const saveApprovedMR = (key: string) => {
+  try {
+    const approved = getApprovedMRs()
+    approved[key] = true
+    localStorage.setItem(APPROVED_MR_KEY, JSON.stringify(approved))
+  } catch {
+    // ignore storage errors
+  }
+}
+
+// 从 localStorage 移除已批准的 MR 状态
+const removeApprovedMR = (key: string) => {
+  try {
+    const approved = getApprovedMRs()
+    delete approved[key]
+    localStorage.setItem(APPROVED_MR_KEY, JSON.stringify(approved))
+  } catch {
+    // ignore storage errors
+  }
+}
+
+// 清理 localStorage 中不再存在的已批准 MR 记录
+const cleanupApprovedMRs = (currentItems: RelatedMR[]) => {
+  try {
+    const approved = getApprovedMRs()
+    const currentKeys = new Set(currentItems.map(getMRKey))
+    const cleaned: ApprovedMRState = {}
+
+    for (const [key, value] of Object.entries(approved)) {
+      if (currentKeys.has(key)) {
+        cleaned[key] = value
+      }
+    }
+
+    localStorage.setItem(APPROVED_MR_KEY, JSON.stringify(cleaned))
+  } catch {
+    // ignore storage errors
+  }
+}
+
 const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
   const {
     setCurrentProject,
@@ -111,6 +167,7 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
   const [loading, setLoading] = useState(false)
   const [data, setData] = useState<RelatedMR[]>([])
   const [viewedMRs, setViewedMRs] = useState<ViewedMRState>({})
+  const [approvedMRs, setApprovedMRs] = useState<ApprovedMRState>({})
 
   // 检查 MR 是否是新的（未查看过）
   const isNewMR = useCallback((item: RelatedMR): boolean => {
@@ -129,8 +186,10 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
       const result = await api.listRelatedMergeRequests('opened')
       // 清理 localStorage 中不再存在的 MR 记录
       cleanupViewedMRs(result)
+      cleanupApprovedMRs(result)
       // 更新本地状态
       setViewedMRs(getViewedMRs())
+      setApprovedMRs(getApprovedMRs())
       setData(result)
     } catch (err: any) {
       message.error(err.response?.data?.detail || err.message || '加载 MR 列表失败')
@@ -167,19 +226,21 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
 
   const handleApprove = async (item: RelatedMR) => {
     if (!item.project) return
-
+    const key = getMRKey(item)
     try {
       await api.approveMergeRequest(
         item.project.id.toString(),
         item.mr.iid
       )
       message.success('已批准')
-      // 标记为已查看
-      const key = getMRKey(item)
-      saveViewedMR(key)
+      // 标记为已查看和已批准
+      saveViewedMR(key)  
       setViewedMRs(getViewedMRs())
     } catch (err: any) {
       message.error(err.response?.data?.detail || err.message || '批准失败')
+    } finally {
+      saveApprovedMR(key)
+      setApprovedMRs(getApprovedMRs())
     }
   }
 
@@ -192,9 +253,13 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
         item.mr.iid
       )
       message.success('已取消批准')
-      // 重新加载数据
     } catch (err: any) {
       message.error(err.response?.data?.detail || err.message || '取消批准失败')
+    } finally{
+      // 移除已批准状态
+      const key = getMRKey(item)
+      removeApprovedMR(key)
+      setApprovedMRs(getApprovedMRs())
     }
   }
 
@@ -217,10 +282,12 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
 
       message.success('已发送 lgtm 并批准')
 
-      // 标记为已查看
+      // 标记为已查看和已批准
       const key = getMRKey(item)
       saveViewedMR(key)
+      saveApprovedMR(key)
       setViewedMRs(getViewedMRs())
+      setApprovedMRs(getApprovedMRs())
     } catch (err: any) {
       message.error(err.response?.data?.detail || err.message || '发送失败')
     }
@@ -300,7 +367,7 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
                           <Tag color="red">New</Tag>
                         )}
                         {getStateTag(item.mr.state)}
-                        {item.mr.approved_by_current_user && (
+                        {approvedMRs[getMRKey(item)] && (
                           <Tag icon={<CheckCircleOutlined />} color="success">已批准</Tag>
                         )}
                       </Space>
@@ -343,7 +410,7 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
                   >
                     发送lgtm并批准
                   </LoadingButton>
-                  {item.mr.approved_by_current_user ? (
+                  {approvedMRs[getMRKey(item)] ? (
                     <LoadingButton
                       size="small"
                       danger
