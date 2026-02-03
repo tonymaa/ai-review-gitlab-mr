@@ -15,6 +15,41 @@ import {
 import type { MergeRequest } from '../types'
 import { api } from '../api/client'
 
+const APPROVED_MR_KEY = 'approved_mr_items'
+
+interface ApprovedMRState {
+  [key: string]: boolean
+}
+
+// 获取 MR 的唯一标识 key
+const getMRKey = (projectId: string, mrIid: number): string => {
+  return `${projectId}_${mrIid}`
+}
+
+// 保存已批准的 MR 状态到 localStorage
+const saveApprovedMR = (key: string) => {
+  try {
+    const stored = localStorage.getItem(APPROVED_MR_KEY)
+    const approved: ApprovedMRState = stored ? JSON.parse(stored) : {}
+    approved[key] = true
+    localStorage.setItem(APPROVED_MR_KEY, JSON.stringify(approved))
+  } catch {
+    // ignore storage errors
+  }
+}
+
+// 从 localStorage 移除已批准的 MR 状态
+const removeApprovedMR = (key: string) => {
+  try {
+    const stored = localStorage.getItem(APPROVED_MR_KEY)
+    const approved: ApprovedMRState = stored ? JSON.parse(stored) : {}
+    delete approved[key]
+    localStorage.setItem(APPROVED_MR_KEY, JSON.stringify(approved))
+  } catch {
+    // ignore storage errors
+  }
+}
+
 const { Text, Paragraph } = Typography
 
 interface MRDetailProps {
@@ -43,6 +78,13 @@ const MRDetail: FC<MRDetailProps> = ({ project_id, mr, onRefresh }) => {
     try {
       const state = await api.getMergeRequestApprovalState(project_id, mr.iid)
       setApprovalState(state)
+      // 强制同步 localStorage 中的 approval 状态
+      const key = getMRKey(project_id, mr.iid)
+      if (state.approved) {
+        saveApprovedMR(key)
+      } else {
+        removeApprovedMR(key)
+      }
     } catch (err: any) {
       console.error('获取批准状态失败:', err)
     } finally {
