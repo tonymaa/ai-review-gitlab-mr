@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 # JWT 配置
 SECRET_KEY = "your-secret-key-change-this-in-production"  # 生产环境应该从配置文件读取
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7天
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 180  # 180天
 
 
 def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
