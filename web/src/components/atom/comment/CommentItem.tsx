@@ -3,7 +3,7 @@
  */
 
 import { FC } from 'react'
-import { Avatar, Button, Input, Space, Tooltip, Typography } from 'antd'
+import { Avatar, Button, Input, Menu, Space, Tooltip, Typography } from 'antd'
 import { ArrowRightOutlined, DeleteOutlined, UserOutlined } from '@ant-design/icons'
 import type { Discussion } from '../../../types'
 import ReplyItem from './ReplyItem'
@@ -166,7 +166,7 @@ const CommentItem: FC<CommentItemProps> = ({
       {/* 回复输入框 */}
       {showReplyInput && (
         <div style={{ marginLeft: '32px', marginTop: '8px' }}>
-          <Space.Compact style={{ width: '100%', gap: '10px', alignItems: 'center' }}>
+          <Space.Compact style={{ width: '100%', gap: '5px', alignItems: 'start', flexDirection:'column' }}>
             <TextArea
               placeholder="写回复..."
               value={replyInput}
