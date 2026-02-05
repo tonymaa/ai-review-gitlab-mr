@@ -52,6 +52,7 @@ const CommentPanel: FC<CommentPanelProps> = () => {
   const [replying, setReplying] = useState<Record<string, boolean>>({})
   const [showReplyInput, setShowReplyInput] = useState<Record<string, boolean>>({})
   const [expandedReplies, setExpandedReplies] = useState<Record<string, boolean>>({})
+  const [aiGenerating, setAiGenerating] = useState<Record<string, boolean>>({})
 
   // 格式化完整时间为中国习惯格式
   const formatFullTime = (dateString: string) => {
@@ -156,6 +157,29 @@ const CommentPanel: FC<CommentPanelProps> = () => {
       message.error(err.response?.data?.detail || '发布回复失败')
     } finally {
       setReplying(prev => ({ ...prev, [noteId]: false }))
+    }
+  }
+
+  // AI 生成回复
+  const handleGenerateAIReply = async (noteId: number, parentComment: string) => {
+    if (!currentMR || !currentProject) {
+      message.warning('请先选择一个 MR')
+      return
+    }
+
+    setAiGenerating(prev => ({ ...prev, [noteId]: true }))
+    try {
+      const result = await api.generateAIReply(
+        currentProject.id.toString(),
+        currentMR.iid,
+        parentComment
+      )
+      // 将生成的回复填入输入框
+      setReplyInputs(prev => ({ ...prev, [noteId]: result.reply }))
+    } catch (err: any) {
+      message.error(err.response?.data?.detail || 'AI 生成回复失败')
+    } finally {
+      setAiGenerating(prev => ({ ...prev, [noteId]: false }))
     }
   }
 
@@ -413,6 +437,7 @@ const CommentPanel: FC<CommentPanelProps> = () => {
         showReplyInput={showReplyInputFlag}
         replyInput={replyInputs[mainNote.id] || ''}
         replying={replying[mainNote.id] || false}
+        aiGenerating={aiGenerating[mainNote.id] || false}
         onToggleReplies={() => {
           setExpandedReplies(prev => ({ ...prev, [mainNote.id]: !prev[mainNote.id] }))
         }}
@@ -423,6 +448,7 @@ const CommentPanel: FC<CommentPanelProps> = () => {
           setReplyInputs(prev => ({ ...prev, [mainNote.id]: value }))
         }}
         onPublishReply={() => handlePublishReply(mainNote.id)}
+        onGenerateAIReply={() => handleGenerateAIReply(mainNote.id, mainNote.body)}
       />
     )
   }

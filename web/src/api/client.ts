@@ -319,6 +319,28 @@ class APIClient {
     return response.data;
   }
 
+  /**
+   * AI 生成回复
+   * @param projectId 项目 ID
+   * @param mrIid MR IID
+   * @param parentComment 父评论内容
+   * @param provider AI 提供商
+   */
+  async generateAIReply(
+    projectId: string,
+    mrIid: number,
+    parentComment: string,
+    provider: string = 'openai'
+  ): Promise<{ reply: string }> {
+    const response = await this.client.post('/ai/reply', {
+      project_id: projectId,
+      mr_iid: mrIid,
+      parent_comment: parentComment,
+      provider,
+    });
+    return response.data;
+  }
+
   // ==================== AI Summary ====================
 
   /**

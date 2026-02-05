@@ -600,3 +600,145 @@ async def summarize_changes(
             "Connection": "keep-alive",
         },
     )
+
+
+# ==================== AI Reply ====================
+
+class AIReplyRequest(BaseModel):
+    """AI 回复请求"""
+    project_id: str
+    mr_iid: int
+    parent_comment: str
+    provider: str = "openai"
+
+
+class AIReplyResponse(BaseModel):
+    """AI 回复响应"""
+    reply: str
+
+
+async def generate_ai_reply(
+    client: GitLabClient,
+    project_id: str,
+    mr_iid: int,
+    parent_comment: str,
+    config: dict,
+) -> str:
+    """生成 AI 回复"""
+    # 获取 MR 信息和 diffs
+    mr = client.get_merge_request(project_id, mr_iid)
+    diff_files = client.get_merge_request_diffs(project_id, mr_iid)
+
+    # 构建相关的 diff 内容（限制长度）
+    diff_content_list = []
+    total_length = 0
+    max_length = 3000  # 限制 diff 总长度
+
+    for df in diff_files:
+        if total_length >= max_length:
+            break
+        diff_snippet = df.diff[:1000]  # 每个文件最多 1000 字符
+        diff_content_list.append(f"\n=== {df.get_display_path()} ===\n{diff_snippet}")
+        total_length += len(diff_snippet)
+
+    diff_content = "\n".join(diff_content_list)
+
+    # 判断父评论语言
+    has_chinese = any('\u4e00' <= c <= '\u9fff' for c in parent_comment)
+    lang_instruction = "中文" if has_chinese else "英文"
+    reply_examples = "例如：嗯、好的、可以、行、了解了" if has_chinese else "For example: OK, got it, sure, sounds good, makes sense"
+
+    # 构建提示词 - 敷衍回复风格
+    prompt = f"""Generate a perfunctory reply to the following code review comment.
+
+Parent comment:
+{parent_comment}
+
+Merge Request info:
+Title: {mr.title}
+Source: {mr.source_branch} -> Target: {mr.target_branch}
+Description: {mr.description or '(No description)'}
+
+Related code changes:
+{diff_content}
+
+Requirements:
+1. Reply must be in {lang_instruction} - This is critical!
+2. Be perfunctory/casual
+3. {reply_examples}
+
+Reply:"""
+
+    # 创建审查器
+    reviewer = create_reviewer(**config)
+
+    if isinstance(reviewer, OpenAIReviewer):
+        import asyncio
+        messages = [
+            {"role": "system", "content": f"You are a code review assistant. Always reply in {lang_instruction}. Keep replies short and casual."},
+            {"role": "user", "content": prompt},
+        ]
+
+        # 调用 API
+        stream = await reviewer.client.chat.completions.create(
+            model=reviewer.model,
+            messages=messages,
+            temperature=0.5,  # 稍高的温度，让回复更随意
+            max_tokens=200,   # 简短回复
+            stream=False,     # 不需要流式
+        )
+
+        reply = stream.choices[0].message.content.strip()
+        return reply
+    else:
+        # 非 OpenAI 提供商，返回默认敷衍回复
+        return "好的，了解了"
+
+
+@router.post("/reply", response_model=AIReplyResponse)
+async def ai_reply(
+    request: AIReplyRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: DatabaseManager = Depends(get_db),
+    client: GitLabClient = Depends(get_gitlab_client),
+):
+    """AI 生成回复"""
+    # 获取用户的 AI 配置
+    ai_config = db.get_ai_config(user_id)
+    if not ai_config:
+        raise HTTPException(status_code=400, detail="请先配置 AI")
+
+    provider = request.provider or ai_config.get("provider", "openai")
+    if provider == "openai" and not ai_config.get("openai_api_key"):
+        raise HTTPException(status_code=400, detail="OpenAI API Key 未配置")
+
+    try:
+        # 构建配置
+        config = _build_review_config(ai_config, provider)
+
+        # 生成回复
+        reply = await generate_ai_reply(
+            client,
+            request.project_id,
+            request.mr_iid,
+            request.parent_comment,
+            config,
+        )
+
+        return AIReplyResponse(reply=reply)
+
+    except GitLabException as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except AIAuthError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    except AIQuotaError as e:
+        raise HTTPException(status_code=429, detail=str(e))
+    except AIModelNotFoundError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except AIConnectionError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except AIException as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        logger.error(f"AI 回复生成失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"AI 回复生成失败: {str(e)}")

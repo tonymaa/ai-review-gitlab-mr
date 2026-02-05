@@ -4,7 +4,7 @@
 
 import { FC } from 'react'
 import { Avatar, Button, Input, Menu, Space, Tooltip, Typography } from 'antd'
-import { ArrowRightOutlined, DeleteOutlined, UserOutlined } from '@ant-design/icons'
+import { ArrowRightOutlined, DeleteOutlined, UserOutlined, RobotOutlined } from '@ant-design/icons'
 import type { Discussion } from '../../../types'
 import ReplyItem from './ReplyItem'
 import SystemCommentItem from './SystemCommentItem'
@@ -22,10 +22,12 @@ interface CommentItemProps {
   showReplyInput: boolean
   replyInput: string
   replying: boolean
+  aiGenerating: boolean
   onToggleReplies: () => void
   onToggleReplyInput: () => void
   onReplyInputChange: (value: string) => void
   onPublishReply: () => void
+  onGenerateAIReply: () => void
 }
 
 const CommentItem: FC<CommentItemProps> = ({
@@ -38,10 +40,12 @@ const CommentItem: FC<CommentItemProps> = ({
   showReplyInput,
   replyInput,
   replying,
+  aiGenerating,
   onToggleReplies,
   onToggleReplyInput,
   onReplyInputChange,
   onPublishReply,
+  onGenerateAIReply,
 }) => {
   const mainNote = discussion.notes[0]
   const replies = discussion.notes.slice(1)
@@ -180,15 +184,26 @@ const CommentItem: FC<CommentItemProps> = ({
               }}
               style={{ fontSize: 12 }}
             />
-            <Button
-              type="primary"
-              size="small"
-              onClick={onPublishReply}
-              loading={replying}
-              disabled={!replyInput.trim()}
-            >
-              发送
-            </Button>
+            <Space size="small">
+              <Button
+                type="primary"
+                size="small"
+                onClick={onPublishReply}
+                loading={replying}
+                disabled={!replyInput.trim()}
+              >
+                发送
+              </Button>
+              <Button
+                size="small"
+                icon={<RobotOutlined />}
+                onClick={onGenerateAIReply}
+                loading={aiGenerating}
+                disabled={aiGenerating}
+              >
+                AI
+              </Button>
+            </Space>
           </Space.Compact>
         </div>
       )}
