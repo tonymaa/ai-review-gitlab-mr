@@ -271,6 +271,13 @@ class APIClient {
     return response.data;
   }
 
+  async listAuthoredMergeRequests(state: 'opened' | 'closed' | 'merged' | 'all' = 'opened'): Promise<RelatedMR[]> {
+    const response = await this.client.get('/gitlab/merge-requests/authored', {
+      params: { state },
+    });
+    return response.data;
+  }
+
   // ==================== AI ====================
 
   async startReview(projectId: string, mrIid: number, provider: string = 'openai'): Promise<{

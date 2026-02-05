@@ -44,9 +44,6 @@ import { useApp } from '../contexts/AppContext'
 
 const { Text } = Typography
 
-const VIEWED_MR_KEY = 'viewed_mr_items'
-const APPROVED_MR_KEY = 'approved_mr_items'
-
 interface ViewedMRState {
   [key: string]: boolean
 }
@@ -58,6 +55,16 @@ interface ApprovedMRState {
 interface RelatedMRModalProps {
   open: boolean
   onClose: () => void
+  mode?: 'related' | 'authored'
+}
+
+// 获取 localStorage key，根据 mode 添加前缀
+const getViewedKey = (mode: 'related' | 'authored'): string => {
+  return mode === 'authored' ? 'authored_viewed_mr_items' : 'viewed_mr_items'
+}
+
+const getApprovedKey = (mode: 'related' | 'authored'): string => {
+  return mode === 'authored' ? 'authored_approved_mr_items' : 'approved_mr_items'
 }
 
 // 获取 MR 的唯一标识 key
@@ -66,9 +73,9 @@ const getMRKey = (item: RelatedMR): string => {
 }
 
 // 从 localStorage 读取已查看的 MR 状态
-const getViewedMRs = (): ViewedMRState => {
+const getViewedMRs = (mode: 'related' | 'authored'): ViewedMRState => {
   try {
-    const stored = localStorage.getItem(VIEWED_MR_KEY)
+    const stored = localStorage.getItem(getViewedKey(mode))
     return stored ? JSON.parse(stored) : {}
   } catch {
     return {}
@@ -76,20 +83,20 @@ const getViewedMRs = (): ViewedMRState => {
 }
 
 // 保存已查看的 MR 状态到 localStorage
-const saveViewedMR = (key: string) => {
+const saveViewedMR = (key: string, mode: 'related' | 'authored') => {
   try {
-    const viewed = getViewedMRs()
+    const viewed = getViewedMRs(mode)
     viewed[key] = true
-    localStorage.setItem(VIEWED_MR_KEY, JSON.stringify(viewed))
+    localStorage.setItem(getViewedKey(mode), JSON.stringify(viewed))
   } catch {
     // ignore storage errors
   }
 }
 
 // 清理 localStorage 中不再存在的 MR 记录
-const cleanupViewedMRs = (currentItems: RelatedMR[]) => {
+const cleanupViewedMRs = (currentItems: RelatedMR[], mode: 'related' | 'authored') => {
   try {
-    const viewed = getViewedMRs()
+    const viewed = getViewedMRs(mode)
     const currentKeys = new Set(currentItems.map(getMRKey))
     const cleaned: ViewedMRState = {}
 
@@ -99,16 +106,16 @@ const cleanupViewedMRs = (currentItems: RelatedMR[]) => {
       }
     }
 
-    localStorage.setItem(VIEWED_MR_KEY, JSON.stringify(cleaned))
+    localStorage.setItem(getViewedKey(mode), JSON.stringify(cleaned))
   } catch {
     // ignore storage errors
   }
 }
 
 // 从 localStorage 读取已批准的 MR 状态
-const getApprovedMRs = (): ApprovedMRState => {
+const getApprovedMRs = (mode: 'related' | 'authored'): ApprovedMRState => {
   try {
-    const stored = localStorage.getItem(APPROVED_MR_KEY)
+    const stored = localStorage.getItem(getApprovedKey(mode))
     return stored ? JSON.parse(stored) : {}
   } catch {
     return {}
@@ -116,31 +123,31 @@ const getApprovedMRs = (): ApprovedMRState => {
 }
 
 // 保存已批准的 MR 状态到 localStorage
-const saveApprovedMR = (key: string) => {
+const saveApprovedMR = (key: string, mode: 'related' | 'authored') => {
   try {
-    const approved = getApprovedMRs()
+    const approved = getApprovedMRs(mode)
     approved[key] = true
-    localStorage.setItem(APPROVED_MR_KEY, JSON.stringify(approved))
+    localStorage.setItem(getApprovedKey(mode), JSON.stringify(approved))
   } catch {
     // ignore storage errors
   }
 }
 
 // 从 localStorage 移除已批准的 MR 状态
-const removeApprovedMR = (key: string) => {
+const removeApprovedMR = (key: string, mode: 'related' | 'authored') => {
   try {
-    const approved = getApprovedMRs()
+    const approved = getApprovedMRs(mode)
     delete approved[key]
-    localStorage.setItem(APPROVED_MR_KEY, JSON.stringify(approved))
+    localStorage.setItem(getApprovedKey(mode), JSON.stringify(approved))
   } catch {
     // ignore storage errors
   }
 }
 
 // 清理 localStorage 中不再存在的已批准 MR 记录
-const cleanupApprovedMRs = (currentItems: RelatedMR[]) => {
+const cleanupApprovedMRs = (currentItems: RelatedMR[], mode: 'related' | 'authored') => {
   try {
-    const approved = getApprovedMRs()
+    const approved = getApprovedMRs(mode)
     const currentKeys = new Set(currentItems.map(getMRKey))
     const cleaned: ApprovedMRState = {}
 
@@ -150,13 +157,13 @@ const cleanupApprovedMRs = (currentItems: RelatedMR[]) => {
       }
     }
 
-    localStorage.setItem(APPROVED_MR_KEY, JSON.stringify(cleaned))
+    localStorage.setItem(getApprovedKey(mode), JSON.stringify(cleaned))
   } catch {
     // ignore storage errors
   }
 }
 
-const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
+const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'related' }) => {
   const {
     setCurrentProject,
     setCurrentMR,
@@ -174,37 +181,40 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
     return !viewedMRs[getMRKey(item)]
   }, [viewedMRs])
 
+  const loadData = useCallback(async () => {
+    setLoading(true)
+    try {
+      const result = mode === 'authored'
+        ? await api.listAuthoredMergeRequests('opened')
+        : await api.listRelatedMergeRequests('opened')
+      // 清理 localStorage 中不再存在的 MR 记录
+      cleanupViewedMRs(result, mode)
+      cleanupApprovedMRs(result, mode)
+      // 更新本地状态
+      setViewedMRs(getViewedMRs(mode))
+      setApprovedMRs(getApprovedMRs(mode))
+      setData(result)
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { detail?: string } }; message?: string }
+      message.error(error.response?.data?.detail || error.message || '加载 MR 列表失败')
+    } finally {
+      setLoading(false)
+    }
+  }, [mode])
+
   useEffect(() => {
     if (open) {
       loadData()
     }
-  }, [open])
-
-  const loadData = async () => {
-    setLoading(true)
-    try {
-      const result = await api.listRelatedMergeRequests('opened')
-      // 清理 localStorage 中不再存在的 MR 记录
-      cleanupViewedMRs(result)
-      cleanupApprovedMRs(result)
-      // 更新本地状态
-      setViewedMRs(getViewedMRs())
-      setApprovedMRs(getApprovedMRs())
-      setData(result)
-    } catch (err: any) {
-      message.error(err.response?.data?.detail || err.message || '加载 MR 列表失败')
-    } finally {
-      setLoading(false)
-    }
-  }
+  }, [open, loadData])
 
   const handleOpenMR = async (item: RelatedMR) => {
     if (!item.project) return
 
     // 标记为已查看
     const key = getMRKey(item)
-    saveViewedMR(key)
-    setViewedMRs(getViewedMRs())
+    saveViewedMR(key, mode)
+    setViewedMRs(getViewedMRs(mode))
 
     // 将项目添加到最近打开的项目列表（localStorage）
     if (item.project) {
@@ -234,13 +244,14 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
       )
       message.success('已批准')
       // 标记为已查看和已批准
-      saveViewedMR(key)  
-      setViewedMRs(getViewedMRs())
-    } catch (err: any) {
-      message.error(err.response?.data?.detail || err.message || '批准失败')
+      saveViewedMR(key, mode)
+      setViewedMRs(getViewedMRs(mode))
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { detail?: string } }; message?: string }
+      message.error(error.response?.data?.detail || error.message || '批准失败')
     } finally {
-      saveApprovedMR(key)
-      setApprovedMRs(getApprovedMRs())
+      saveApprovedMR(key, mode)
+      setApprovedMRs(getApprovedMRs(mode))
     }
   }
 
@@ -253,13 +264,14 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
         item.mr.iid
       )
       message.success('已取消批准')
-    } catch (err: any) {
-      message.error(err.response?.data?.detail || err.message || '取消批准失败')
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { detail?: string } }; message?: string }
+      message.error(error.response?.data?.detail || error.message || '取消批准失败')
     } finally{
       // 移除已批准状态
       const key = getMRKey(item)
-      removeApprovedMR(key)
-      setApprovedMRs(getApprovedMRs())
+      removeApprovedMR(key, mode)
+      setApprovedMRs(getApprovedMRs(mode))
     }
   }
 
@@ -284,12 +296,13 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
 
       // 标记为已查看和已批准
       const key = getMRKey(item)
-      saveViewedMR(key)
-      saveApprovedMR(key)
-      setViewedMRs(getViewedMRs())
-      setApprovedMRs(getApprovedMRs())
-    } catch (err: any) {
-      message.error(err.response?.data?.detail || err.message || '发送失败')
+      saveViewedMR(key, mode)
+      saveApprovedMR(key, mode)
+      setViewedMRs(getViewedMRs(mode))
+      setApprovedMRs(getApprovedMRs(mode))
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { detail?: string } }; message?: string }
+      message.error(error.response?.data?.detail || error.message || '发送失败')
     }
   }
 
@@ -321,7 +334,7 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose }) => {
 
   return (
     <Modal
-      title="与我相关的 Merge Requests"
+      title={mode === 'authored' ? '我创建的 Merge Requests' : '与我相关的 Merge Requests'}
       open={open}
       onCancel={onClose}
       footer={null}

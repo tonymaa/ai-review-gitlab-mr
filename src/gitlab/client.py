@@ -294,6 +294,109 @@ class GitLabClient:
         except GitlabError as e:
             raise GitLabAPIError("列出所有项目相关MR失败", f"错误: {str(e)}")
 
+    def list_all_merge_requests_authored_by_me(
+        self,
+        state: str = "opened",
+    ) -> List[tuple[MergeRequestInfo, ProjectInfo]]:
+        """
+        列出所有项目中由当前用户创建的Merge Requests
+
+        Args:
+            state: MR状态 (opened, closed, merged, all)
+
+        Returns:
+            (MergeRequestInfo, ProjectInfo) 元组列表
+
+        Raises:
+            GitLabAPIError: 获取用户创建的MR失败
+        """
+        try:
+            # 获取当前用户信息
+            current_user = self.get_current_user()
+            if not current_user:
+                raise GitLabAPIError("无法获取当前用户信息", "")
+
+            current_user_id = current_user.get("id")
+
+            # 获取由我创建的 MR
+            authored_mrs = self._client.mergerequests.list(
+                author_id=current_user_id,
+                state=state,
+                all=True,
+                with_approval_status=True,
+            )
+
+            result = []
+            import time
+            total_count = len(authored_mrs)
+
+            # 项目缓存
+            project_cache = {}
+
+            for idx, mr in enumerate(authored_mrs, 1):
+                loop_start = time.time()
+
+                # 创建MR对象
+                step1_start = time.time()
+                try:
+                    mr_info = MergeRequestInfo.from_dict(mr.asdict())
+                except (GitlabError, Exception) as e:
+                    logger.warning(f"创建MR对象失败 [{idx}/{total_count}] !{mr.iid}: {e}")
+                    continue
+                step1_time = time.time() - step1_start
+
+                # 获取项目信息
+                step2_start = time.time()
+                if mr.project_id not in project_cache:
+                    try:
+                        project = self._client.projects.get(mr.project_id)
+                        project_cache[mr.project_id] = project
+                    except GitlabError:
+                        project_cache[mr.project_id] = None
+
+                project = project_cache.get(mr.project_id)
+                project_info = ProjectInfo.from_dict(project.asdict()) if project else None
+                step2_time = time.time() - step2_start
+
+                # 提取 approval 状态
+                step3_start = time.time()
+                try:
+                    if mr.detailed_merge_status == 'approvals_missing' and project:
+                        mr_obj = project.mergerequests.get(mr.iid)
+                        approval = mr_obj.approvals.get()
+                        approved_by = approval.approved_by if hasattr(approval, 'approved_by') else []
+                        for approver in approved_by:
+                            user_dict = approver.asdict() if hasattr(approver, 'asdict') else approver
+                            if user_dict.get('user', {}).get('id') == current_user_id:
+                                mr_info.approved_by_current_user = True
+                                break
+                except Exception as e:
+                    logger.debug(f"解析MR {mr.iid} 的approval状态失败: {e}")
+                step3_time = time.time() - step3_start
+
+                result.append((mr_info, project_info))
+
+                # 缓存到数据库
+                if self.db_manager:
+                    step4_start = time.time()
+                    self.db_manager.save_merge_request(mr_info.to_database_dict())
+                    step4_time = time.time() - step4_start
+                else:
+                    step4_time = 0
+
+                loop_time = time.time() - loop_start
+
+                logger.info(
+                    f"处理MR [{idx}/{total_count}] !{mr.iid} 总耗时: {loop_time:.2f}秒 | "
+                    f"创建对象: {step1_time:.3f}s, "
+                    f"获取项目: {step2_time:.3f}s, "
+                    f"获取审批: {step3_time:.3f}s, "
+                    f"数据库: {step4_time:.3f}s"
+                )
+            return result
+
+        except GitlabError as e:
+            raise GitLabAPIError("列出用户创建的MR失败", f"错误: {str(e)}")
 
     def get_merge_request(
         self,

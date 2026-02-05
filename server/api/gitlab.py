@@ -372,6 +372,29 @@ async def list_related_merge_requests(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/merge-requests/authored")
+async def list_authored_merge_requests(
+    state: str = "opened",
+    client: GitLabClient = Depends(get_gitlab_client),
+):
+    """列出由当前用户创建的所有 Merge Requests"""
+    try:
+        result = client.list_all_merge_requests_authored_by_me(state=state)
+        return [
+            {
+                "mr": MRModel.from_info(mr),
+                "project": ProjectModel.from_info(project) if project else None,
+            }
+            for mr, project in result
+        ]
+
+    except GitLabException as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        logger.error(f"列出用户创建的 MR 失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/projects/{project_id}/merge-requests/{mr_iid}")
 async def get_merge_request(
     project_id: str,

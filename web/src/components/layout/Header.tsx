@@ -15,9 +15,11 @@ import {
   PlusOutlined,
   DeleteOutlined,
   GithubOutlined,
+  FormOutlined,
 } from '@ant-design/icons'
 import { useApp } from '../../contexts/AppContext'
 import ProjectSelectorModal from './ProjectSelectorModal'
+import RelatedMRModal from '../RelatedMRModal'
 import type { Project } from '../../types'
 import type { MenuProps } from 'antd'
 
@@ -28,11 +30,13 @@ interface HeaderProps {
   onOpenConnect: () => void
   onOpenConfig: () => void
   onOpenRelatedMR: () => void
+  onOpenAuthoredMR?: () => void
 }
 
-const Header: FC<HeaderProps> = ({ onOpenConnect, onOpenConfig, onOpenRelatedMR }) => {
+const Header: FC<HeaderProps> = ({ onOpenConnect, onOpenConfig, onOpenRelatedMR, onOpenAuthoredMR }) => {
   const { isConnected, user, logout, projects, addProject, removeProject, currentProject, setCurrentProject } = useApp()
   const [projectModalOpen, setProjectModalOpen] = useState(false)
+  const [authoredModalOpen, setAuthoredModalOpen] = useState(false)
 
   const handleSelectProject = (project: Project) => {
     addProject(project)
@@ -162,13 +166,22 @@ const Header: FC<HeaderProps> = ({ onOpenConnect, onOpenConfig, onOpenRelatedMR 
           )}
 
           {isConnected && (
+            <>
               <Button
                 icon={<UnorderedListOutlined />}
                 size="small"
                 onClick={onOpenRelatedMR}
               >
-                与我相关
+                与我相关的MR
               </Button>
+              <Button
+                icon={<FormOutlined />}
+                size="small"
+                onClick={() => setAuthoredModalOpen(true)}
+              >
+                我创建的MR
+              </Button>
+            </>
           )}
 
           <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
@@ -218,6 +231,13 @@ const Header: FC<HeaderProps> = ({ onOpenConnect, onOpenConfig, onOpenRelatedMR 
         onClose={() => setProjectModalOpen(false)}
         onSelectProject={handleSelectProject}
         currentProjectId={currentProject?.id}
+      />
+
+      {/* 我创建的MR 模态框 */}
+      <RelatedMRModal
+        open={authoredModalOpen}
+        onClose={() => setAuthoredModalOpen(false)}
+        mode={'authored' as const}
       />
     </>
   )
