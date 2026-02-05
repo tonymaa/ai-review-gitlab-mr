@@ -683,8 +683,8 @@ Reply:"""
         stream = await reviewer.client.chat.completions.create(
             model=reviewer.model,
             messages=messages,
-            temperature=0.5,  # 稍高的温度，让回复更随意
-            max_tokens=200,   # 简短回复
+            temperature=reviewer.temperature,  # 稍高的温度，让回复更随意
+            max_tokens=reviewer.max_tokens,   # 简短回复
             stream=False,     # 不需要流式
         )
 

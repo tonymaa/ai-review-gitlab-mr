@@ -344,7 +344,7 @@ class APIClient {
       mr_iid: mrIid,
       parent_comment: parentComment,
       provider,
-    });
+    }, { timeout: 0 });
     return response.data;
   }
 
