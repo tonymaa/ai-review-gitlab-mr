@@ -327,6 +327,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setDiffFiles([]);
     setCurrentDiffFile(null);
     setHighlightLine(null);
+    setNotes([])
   }, []);
 
   // 跳转到指定文件的指定行

@@ -91,10 +91,11 @@ const CommentPanel: FC<CommentPanelProps> = () => {
   }
 
   // 当 MR 变化时加载评论
-  useEffect(() => {
+  useEffect(() => {    
     if (currentMR && currentProject) {
       loadNotes()
     } else {
+      setDiscussions([])
       setNotes([])
     }
     // 清空 AI 评论
@@ -102,6 +103,7 @@ const CommentPanel: FC<CommentPanelProps> = () => {
     // 清空评论输入框
     setCommentInput('')
   }, [currentMR, currentProject, setNotes, setAiComments])
+  
 
   const loadNotes = async () => {
     if (!currentMR || !currentProject) return
