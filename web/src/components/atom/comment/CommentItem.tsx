@@ -162,6 +162,7 @@ const CommentItem: FC<CommentItemProps> = ({
               reply={reply}
               formatFullTime={formatFullTime}
               formatTimeAgo={formatTimeAgo}
+              onDelete={onDelete}
             />
           ))}
         </div>
