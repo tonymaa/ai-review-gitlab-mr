@@ -115,7 +115,13 @@ const CommentPanel: FC<CommentPanelProps> = () => {
         currentProject.id.toString(),
         currentMR.iid
       )
-      setDiscussions(discussionsResult)
+      // 按父评论创建时间降序排序（最新的在最上面）
+      const sortedDiscussions = discussionsResult.sort((a, b) => {
+        const aTime = new Date(a.notes[0]?.created_at || 0).getTime()
+        const bTime = new Date(b.notes[0]?.created_at || 0).getTime()
+        return bTime - aTime
+      })
+      setDiscussions(sortedDiscussions)
       // 同时加载 notes 用于系统评论等
       const notesResult = await api.getMergeRequestNotes(
         currentProject.id.toString(),
