@@ -822,6 +822,77 @@ class GitLabClient:
         except GitlabError as e:
             raise GitLabAPIError("获取批准状态失败", f"项目: {project_id}, MR IID: {mr_iid}, 错误: {str(e)}")
 
+    def get_merge_request_discussions(
+        self,
+        project_id: str | int,
+        mr_iid: int,
+    ) -> List[Dict[str, Any]]:
+        """
+        获取MR的讨论列表（包含回复）
+
+        Args:
+            project_id: 项目ID或路径
+            mr_iid: MR的IID
+
+        Returns:
+            讨论列表，每个讨论包含主评论和回复
+
+        Raises:
+            GitLabNotFoundError: MR不存在
+            GitLabAPIError: 获取MR讨论失败
+        """
+        try:
+            project = self._client.projects.get(project_id)
+            mr = project.mergerequests.get(mr_iid)
+            discussions = mr.discussions.list(all=True)
+
+            result = []
+            for discussion in discussions:
+                result.append(discussion.asdict())
+
+            return result
+
+        except GitlabGetError as e:
+            raise GitLabNotFoundError("MR不存在", f"项目: {project_id}, MR IID: {mr_iid}")
+        except GitlabError as e:
+            raise GitLabAPIError("获取MR讨论失败", f"项目: {project_id}, MR IID: {mr_iid}, 错误: {str(e)}")
+
+    def add_discussion_note(
+        self,
+        project_id: str | int,
+        mr_iid: int,
+        discussion_id: str,
+        body: str,
+    ) -> bool:
+        """
+        在讨论中添加回复
+
+        Args:
+            project_id: 项目ID或路径
+            mr_iid: MR的IID
+            discussion_id: 讨论ID
+            body: 回复内容
+
+        Returns:
+            是否成功
+
+        Raises:
+            GitLabNotFoundError: MR或讨论不存在
+            GitLabAPIError: 添加回复失败
+        """
+        try:
+            project = self._client.projects.get(project_id)
+            mr = project.mergerequests.get(mr_iid)
+            discussion = mr.discussions.get(discussion_id)
+            discussion.notes.create({"body": body})
+            logger.info(f"成功为讨论 {discussion_id} 添加回复")
+            return True
+
+        except GitlabGetError as e:
+            raise GitLabNotFoundError("MR或讨论不存在", f"项目: {project_id}, MR IID: {mr_iid}, 讨论ID: {discussion_id}")
+        except GitlabError as e:
+            raise GitLabAPIError("添加回复失败", f"项目: {project_id}, MR IID: {mr_iid}, 讨论ID: {discussion_id}, 错误: {str(e)}")
+
 
 def parse_project_identifier(identifier: str) -> tuple[str, str | int]:
     """

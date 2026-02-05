@@ -119,6 +119,45 @@ export interface Note {
   line_number?: number;
 }
 
+/** 讨论中的单个笔记 */
+export interface DiscussionNote {
+  id: number;
+  type: string;
+  author: {
+    id: number;
+    username: string;
+    name: string;
+    avatar_url?: string;
+  };
+  created_at: string;
+  updated_at: string;
+  system: boolean;
+  noteable_id: number;
+  noteable_type: string;
+  noteable_iid: number;
+  body: string;
+  position?: {
+    base_sha: string;
+    start_sha: string;
+    head_sha: string;
+    old_path: string;
+    new_path: string;
+    position_type: string;
+    old_line?: number;
+    new_line?: number;
+  };
+  resolvable: boolean;
+  resolved: boolean;
+}
+
+/** 讨论（包含主评论和回复） */
+export interface Discussion {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  notes: DiscussionNote[];
+}
+
 /** AI 评论 */
 export interface ReviewComment {
   file_path: string;

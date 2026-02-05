@@ -601,3 +601,58 @@ async def get_merge_request_approval_state(
     except Exception as e:
         logger.error(f"获取 MR 批准状态失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class ReplyRequest(BaseModel):
+    """回复请求"""
+    body: str
+
+
+@router.get("/projects/{project_id}/merge-requests/{mr_iid}/discussions")
+async def get_merge_request_discussions(
+    project_id: str,
+    mr_iid: int,
+    client: GitLabClient = Depends(get_gitlab_client),
+):
+    """获取 Merge Request 的讨论列表（包含回复）"""
+    try:
+        discussions = client.get_merge_request_discussions(
+            project_id=project_id,
+            mr_iid=mr_iid,
+        )
+        return discussions
+
+    except GitLabException as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        logger.error(f"获取 MR 讨论失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/projects/{project_id}/merge-requests/{mr_iid}/discussions/{discussion_id}/notes")
+async def add_discussion_note(
+    project_id: str,
+    mr_iid: int,
+    discussion_id: str,
+    request: ReplyRequest,
+    client: GitLabClient = Depends(get_gitlab_client),
+):
+    """在讨论中添加回复"""
+    try:
+        success = client.add_discussion_note(
+            project_id=project_id,
+            mr_iid=mr_iid,
+            discussion_id=discussion_id,
+            body=request.body,
+        )
+
+        if success:
+            return {"status": "ok", "message": "回复已发布"}
+        else:
+            raise HTTPException(status_code=500, detail="发布回复失败")
+
+    except GitLabException as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        logger.error(f"添加回复失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

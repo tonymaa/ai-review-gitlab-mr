@@ -16,6 +16,7 @@ import type {
   ReviewResponse,
   CommentRequest,
   User,
+  Discussion,
 } from '../types';
 
 // Token 管理 key
@@ -221,6 +222,24 @@ class APIClient {
   async deleteMergeRequestNote(projectId: string, mrIid: number, noteId: number): Promise<{ status: string; message: string }> {
     const response = await this.client.delete(
       `/gitlab/projects/${projectId}/merge-requests/${mrIid}/notes/${noteId}`
+    );
+    return response.data;
+  }
+
+  async getMergeRequestDiscussions(projectId: string, mrIid: number): Promise<Discussion[]> {
+    const response = await this.client.get(`/gitlab/projects/${projectId}/merge-requests/${mrIid}/discussions`);
+    return response.data;
+  }
+
+  async addDiscussionNote(
+    projectId: string,
+    mrIid: number,
+    discussionId: string,
+    body: string
+  ): Promise<{ status: string; message: string }> {
+    const response = await this.client.post(
+      `/gitlab/projects/${projectId}/merge-requests/${mrIid}/discussions/${discussionId}/notes`,
+      { body }
     );
     return response.data;
   }

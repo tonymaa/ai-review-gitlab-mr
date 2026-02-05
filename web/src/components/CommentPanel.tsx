@@ -3,28 +3,23 @@
  */
 
 import { type FC, useState, useEffect } from 'react'
-import { List, Avatar, Input, Button, Space, Typography, Tag, Empty, Spin, Tabs, message, Modal, Tooltip } from 'antd'
+import { List, Input, Button, Space, Tag, Empty, Spin, Tabs, message, Modal, Tooltip } from 'antd'
 import {
   MessageOutlined,
   SendOutlined,
   RobotOutlined,
-  UserOutlined,
-  EditOutlined,
   DeleteOutlined,
-  CloseOutlined,
-  CheckOutlined,
-  ArrowRightOutlined,
   ExpandOutlined,
   ShrinkOutlined,
 } from '@ant-design/icons'
 import ReactMarkdown from 'react-markdown'
-import type { Note, ReviewComment } from '../types'
+import type { Note, ReviewComment, Discussion } from '../types'
 import { api } from '../api/client'
 import { useApp } from '../contexts/AppContext'
 import MRDetail from './MRDetail'
+import { CommentItem, AICommentItem } from './atom/comment'
 
 const { TextArea } = Input
-const { Text, Paragraph } = Typography
 
 type CommentPanelProps = object
 
@@ -52,6 +47,11 @@ const CommentPanel: FC<CommentPanelProps> = () => {
   const [sendingAIComment, setSendingAIComment] = useState<number | null>(null)
   const [aiSummarizing, setAiSummarizing] = useState(false)
   const [expandModalVisible, setExpandModalVisible] = useState(false)
+  const [discussions, setDiscussions] = useState<Discussion[]>([])
+  const [replyInputs, setReplyInputs] = useState<Record<string, string>>({})
+  const [replying, setReplying] = useState<Record<string, boolean>>({})
+  const [showReplyInput, setShowReplyInput] = useState<Record<string, boolean>>({})
+  const [expandedReplies, setExpandedReplies] = useState<Record<string, boolean>>({})
 
   // 格式化完整时间为中国习惯格式
   const formatFullTime = (dateString: string) => {
@@ -107,15 +107,55 @@ const CommentPanel: FC<CommentPanelProps> = () => {
 
     setLoading(true)
     try {
-      const result = await api.getMergeRequestNotes(
+      // 只加载 discussions（包含主评论和回复）
+      const discussionsResult = await api.getMergeRequestDiscussions(
         currentProject.id.toString(),
         currentMR.iid
       )
-      setNotes(result)
+      setDiscussions(discussionsResult)
+      // 同时加载 notes 用于系统评论等
+      const notesResult = await api.getMergeRequestNotes(
+        currentProject.id.toString(),
+        currentMR.iid
+      )
+      setNotes(notesResult)
     } catch (err: any) {
       message.error(err.response?.data?.detail || err.message || '加载评论失败')
     } finally {
       setLoading(false)
+    }
+  }
+
+  // 获取某个 note 对应的 discussion ID
+  const getDiscussionIdForNote = (noteId: number) => {
+    const discussion = discussions.find(d => d.notes[0]?.id === noteId)
+    return discussion?.id
+  }
+
+  // 发布回复
+  const handlePublishReply = async (noteId: number) => {
+    const discussionId = getDiscussionIdForNote(noteId)
+    if (!discussionId || !replyInputs[noteId]?.trim() || !currentMR || !currentProject) {
+      return
+    }
+
+    setReplying(prev => ({ ...prev, [noteId]: true }))
+    try {
+      await api.addDiscussionNote(
+        currentProject.id.toString(),
+        currentMR.iid,
+        discussionId,
+        replyInputs[noteId]
+      )
+
+      message.success('回复已发布')
+      setReplyInputs(prev => ({ ...prev, [noteId]: '' }))
+      // 重新加载评论
+      await loadNotes()
+    } catch (err: any) {
+      message.error(err.response?.data?.detail || '发布回复失败')
+    } finally {
+      setReplying(prev => ({ ...prev, [noteId]: false }))
     }
   }
 
@@ -355,244 +395,62 @@ const CommentPanel: FC<CommentPanelProps> = () => {
     }
   }
 
-  const renderNote = (note: Note) => {
-    console.log("note>>", note);
-
-    // System 类型的评论显示为系统活动样式
-    if (note.system) {
-      // 解析并格式化 system 评论内容
-      const formatSystemNote = (body: string, authorName: string) => {
-        // 检查 body 是否以 author_name 开头，如果是则去掉
-        let content = body
-        if (content.startsWith(authorName)) {
-          content = content.slice(authorName.length).trim()
-        }
-
-        // 处理 @username 格式
-        const parts = content.split(/(@[\w-]+)/g)
-        const formattedParts = parts.map((part, index) => {
-          if (part.startsWith('@')) {
-            return <Tag key={index} color="blue" style={{ fontSize: 11, margin: '0 2px' }}>{part}</Tag>
-          }
-          return part
-        })
-
-        return (
-          <>
-            <Text strong style={{ color: '#ccc' }}>{authorName}</Text>
-            {' '}
-            {formattedParts}
-          </>
-        )
-      }
-
-      return (
-        <div key={note.id} style={{
-          padding: '8px 12px',
-          margin: '8px 0',
-          background: '#2a2a2a',
-          borderRadius: 4,
-          fontSize: 12,
-          color: '#999',
-          border: '1px solid #3a3a3a',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px'
-        }}>
-          <span style={{ flex: 1 }}>
-            {formatSystemNote(note.body, note.author_name)}
-          </span>
-          <Tooltip title={formatFullTime(note.created_at)}>
-            <span style={{ fontSize: 11, color: '#666' }}>
-              {formatTimeAgo(note.created_at)}
-            </span>
-          </Tooltip>
-        </div>
-      )
-    }
-
-    const canJump = note.file_path && note.line_number
+  // 渲染单个 discussion（包含主评论和回复）
+  const renderDiscussion = (discussion: Discussion) => {
+    const mainNote = discussion.notes[0]
+    const showReplies = expandedReplies[mainNote.id]
+    const showReplyInputFlag = showReplyInput[mainNote.id]
 
     return (
-      <div key={note.id} style={{
-        padding: '12px',
-        margin: '8px 0',
-        background: '#2a2a2a',
-        borderRadius: 4,
-        fontSize: 12,
-        border: '1px solid #3a3a3a',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '8px'
-      }}>
-        {/* 头部：作者信息和时间 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Avatar
-            src={note.author_avatar}
-            icon={<UserOutlined />}
-            size="small"
-          />
-          <Text strong style={{ fontSize: 13, color: '#ddd' }}>{note.author_name}</Text>
-          <Tooltip title={formatFullTime(note.created_at)}>
-            <Text type="secondary" style={{ fontSize: 11, color: '#999' }}>
-              {formatTimeAgo(note.created_at)}
-            </Text>
-          </Tooltip>
-        </div>
-
-        {/* 评论内容 */}
-        <Paragraph
-          style={{
-            fontSize: 13,
-            color: '#d9d9d9',
-            marginBottom: 0
-          }}
-          ellipsis={{ rows: 3, expandable: 'collapsible' }}
-        >
-          {note.body}
-        </Paragraph>
-
-        {/* 底部：文件位置和操作按钮 */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          {canJump && (
-            <Space size={4}>
-              <Text type="secondary" style={{ fontSize: 11, color: '#999' }}>
-                {note.file_path}:{note.line_number}
-              </Text>
-              <Button
-                type="link"
-                size="small"
-                icon={<ArrowRightOutlined />}
-                onClick={() => jumpToLine(note.file_path!, note.line_number!)}
-                style={{ padding: 0, fontSize: 11, color: '#999' }}
-              >
-                跳转
-              </Button>
-            </Space>
-          )}
-          <Button
-            type="text"
-            size="small"
-            icon={<DeleteOutlined />}
-            onClick={() => handleDeleteNote(note.id)}
-            danger
-            style={{ fontSize: 11 }}
-          >
-            删除
-          </Button>
-        </div>
-      </div>
+      <CommentItem
+        key={discussion.id}
+        discussion={discussion}
+        formatFullTime={formatFullTime}
+        formatTimeAgo={formatTimeAgo}
+        jumpToLine={jumpToLine}
+        onDelete={handleDeleteNote}
+        showReplies={showReplies}
+        showReplyInput={showReplyInputFlag}
+        replyInput={replyInputs[mainNote.id] || ''}
+        replying={replying[mainNote.id] || false}
+        onToggleReplies={() => {
+          setExpandedReplies(prev => ({ ...prev, [mainNote.id]: !prev[mainNote.id] }))
+        }}
+        onToggleReplyInput={() => {
+          setShowReplyInput(prev => ({ ...prev, [mainNote.id]: !prev[mainNote.id] }))
+        }}
+        onReplyInputChange={(value) => {
+          setReplyInputs(prev => ({ ...prev, [mainNote.id]: value }))
+        }}
+        onPublishReply={() => handlePublishReply(mainNote.id)}
+      />
     )
   }
 
+  // 渲染 AI 评论
   const renderAIComment = (comment: ReviewComment, index: number) => {
     const isEditing = editingAIComment?.index === index
     const isSending = sendingAIComment === index
-    const canJump = comment.file_path && comment.line_number
 
     return (
-      <List.Item key={index} style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
-        <div style={{ width: '100%', display: 'flex', gap: 8 }}>
-          <Avatar
-            icon={<RobotOutlined />}
-            size="small"
-            style={{ background: '#1677ff', flexShrink: 0 }}
-          />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            {/* 标题栏 */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-              <Space size="small">
-                {getSeverityTag(comment.severity)}
-                {comment.file_path && (
-                  <Text type="secondary" style={{ fontSize: 12 }}>
-                    {comment.file_path}
-                    {comment.line_number && `:${comment.line_number}`}
-                  </Text>
-                )}
-              </Space>
-              {canJump && (
-                <Button
-                  type="link"
-                  size="small"
-                  icon={<ArrowRightOutlined />}
-                  onClick={() => jumpToLine(comment.file_path!, comment.line_number!)}
-                  style={{ padding: 0, fontSize: 12 }}
-                >
-                  跳转
-                </Button>
-              )}
-            </div>
-
-            {/* 内容区域 */}
-            {isEditing ? (
-              <TextArea
-                value={editingAIComment.content}
-                onChange={(e) => setEditingAIComment({ ...editingAIComment, content: e.target.value })}
-                autoSize={{ minRows: 2, maxRows: 8 }}
-                style={{ marginBottom: 8, fontSize: 13 }}
-              />
-            ) : (
-              <Paragraph
-                style={{ marginBottom: 8, whiteSpace: 'pre-wrap', fontSize: 13 }}
-                ellipsis={{ rows: 4, expandable: true, symbol: '展开' }}
-              >
-                {comment.content}
-              </Paragraph>
-            )}
-
-            {/* 操作按钮 */}
-            <Space size="small">
-              {isEditing ? (
-                <>
-                  <Button
-                    type="primary"
-                    size="small"
-                    icon={<CheckOutlined />}
-                    onClick={handleSaveAIComment}
-                  >
-                    保存
-                  </Button>
-                  <Button
-                    size="small"
-                    icon={<CloseOutlined />}
-                    onClick={handleCancelEditAIComment}
-                  >
-                    取消
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <Button
-                    type="primary"
-                    size="small"
-                    icon={<SendOutlined />}
-                    onClick={() => handleSendAIComment(comment, index)}
-                    loading={isSending}
-                  >
-                    发送
-                  </Button>
-                  <Button
-                    size="small"
-                    icon={<EditOutlined />}
-                    onClick={() => handleStartEditAIComment(index, comment.content)}
-                  >
-                    编辑
-                  </Button>
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<DeleteOutlined />}
-                    onClick={() => handleDeleteAIComment(index)}
-                    danger
-                  >
-                    删除
-                  </Button>
-                </>
-              )}
-            </Space>
-          </div>
-        </div>
-      </List.Item>
+      <AICommentItem
+        key={index}
+        comment={comment}
+        index={index}
+        isEditing={isEditing}
+        isSending={isSending}
+        editingContent={editingAIComment?.content || comment.content}
+        formatFullTime={formatFullTime}
+        formatTimeAgo={formatTimeAgo}
+        jumpToLine={jumpToLine}
+        onSend={() => handleSendAIComment(comment, index)}
+        onEdit={() => handleStartEditAIComment(index, comment.content)}
+        onDelete={() => handleDeleteAIComment(index)}
+        onSaveEdit={handleSaveAIComment}
+        onCancelEdit={handleCancelEditAIComment}
+        onEditChange={(value) => setEditingAIComment({ index, content: value })}
+        getSeverityTag={getSeverityTag}
+      />
     )
   }
 
@@ -691,7 +549,7 @@ const CommentPanel: FC<CommentPanelProps> = () => {
               children: (
                 <div style={{ height: '100%', overflowY: 'auto', overflowX: 'hidden', padding: '0 6px' }}>
                   <Spin spinning={loading}>
-                    {notes.length === 0 ? (
+                    {discussions.length === 0 ? (
                       <Empty
                         image={Empty.PRESENTED_IMAGE_SIMPLE}
                         description="暂无评论"
@@ -699,8 +557,8 @@ const CommentPanel: FC<CommentPanelProps> = () => {
                       />
                     ) : (
                       <List
-                        dataSource={notes}
-                        renderItem={renderNote}
+                        dataSource={discussions}
+                        renderItem={renderDiscussion}
                         size="small"
                       />
                     )}
