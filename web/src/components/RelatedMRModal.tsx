@@ -228,7 +228,9 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
     setCurrentMR(item.mr)
 
     // 设置左侧 MR 列表的筛选状态：勾选"与我相关"，状态切到 opened
-    setMrListFilterRelated(true)
+    if (mode !== 'authored') {
+      setMrListFilterRelated(true)
+    }
     setMrListFilterState('opened')
 
     onClose()
