@@ -9,6 +9,7 @@ import {
   CloseCircleOutlined,
   MergeCellsOutlined,
   CheckCircleOutlined,
+  MessageOutlined,
 } from '@ant-design/icons'
 import type { MergeRequest } from '../types'
 import { api } from '../api/client'
@@ -275,6 +276,9 @@ const MRListPanel: FC<MRListPanelProps> = ({
                           {getStateTag(mr.state)}
                           <Text type="secondary" style={{ fontSize: 12 }}>
                             !{mr.iid}
+                          </Text>
+                          <Text type="secondary" style={{ fontSize: 12, marginLeft: '8px' }}>
+                            <MessageOutlined /> {mr.user_notes_count}
                           </Text>
                         </Space>
                         <Text type="secondary" style={{ fontSize: 12 }}>
