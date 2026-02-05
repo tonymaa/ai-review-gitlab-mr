@@ -646,8 +646,7 @@ async def generate_ai_reply(
     # 判断父评论语言
     has_chinese = any('\u4e00' <= c <= '\u9fff' for c in parent_comment)
     lang_instruction = "中文" if has_chinese else "英文"
-    reply_examples = "例如：嗯、好的、可以、行、了解了" if has_chinese else "For example: OK, got it, sure, sounds good, makes sense"
-
+    
     # 构建提示词 - 敷衍回复风格
     prompt = f"""Generate a perfunctory reply to the following code review comment.
 
@@ -665,7 +664,6 @@ Related code changes:
 Requirements:
 1. Reply must be in {lang_instruction} - This is critical!
 2. Be perfunctory/casual
-3. {reply_examples}
 
 Reply:"""
 
