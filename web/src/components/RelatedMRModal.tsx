@@ -2,7 +2,7 @@
  * 与我相关的 MR 弹窗组件
  */
 
-import { type FC, useState, useEffect, useCallback } from 'react'
+import { type FC, useState, useEffect, useCallback, useRef } from 'react'
 import { Modal, List, Tag, Avatar, Space, Typography, Spin, Button, Tooltip, message } from 'antd'
 import type { ButtonProps } from 'antd/es/button'
 
@@ -37,8 +37,11 @@ import {
   MessageOutlined,
   LinkOutlined,
   ExportOutlined,
+  SettingOutlined,
 } from '@ant-design/icons'
 import type { RelatedMR } from '../types'
+import type { AutoReviewConfig, AutoReviewSettingsModalRef } from './AutoReviewSettingsModal'
+import { getAutoReviewConfig, AutoReviewSettingsModal, getDefaultAutoReviewConfig } from './AutoReviewSettingsModal'
 import { api } from '../api/client'
 import { useApp } from '../contexts/AppContext'
 
@@ -176,6 +179,11 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
   const [viewedMRs, setViewedMRs] = useState<ViewedMRState>({})
   const [approvedMRs, setApprovedMRs] = useState<ApprovedMRState>({})
 
+  // 自动 Review 配置状态
+  const [autoReviewConfig, setAutoReviewConfig] = useState<AutoReviewConfig>(getDefaultAutoReviewConfig())
+  const [autoReviewRunning, setAutoReviewRunning] = useState(false)
+  const settingsModalRef = useRef<AutoReviewSettingsModalRef>(null)
+
   // 检查 MR 是否是新的（未查看过）
   const isNewMR = useCallback((item: RelatedMR): boolean => {
     return !viewedMRs[getMRKey(item)]
@@ -207,6 +215,111 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
       loadData()
     }
   }, [open, loadData])
+
+  // 加载自动 Review 配置
+  useEffect(() => {
+    setAutoReviewConfig(getAutoReviewConfig())
+  }, [])
+
+  // 自动 Review 后台任务
+  useEffect(() => {
+    // 只在 mode 为 'related' 时启用
+    if (mode !== 'related') return
+
+    // 如果未启用，不执行
+    if (!autoReviewConfig.enabled || !autoReviewConfig.creators.length) {
+      setAutoReviewRunning(false)
+      return
+    }
+
+    setAutoReviewRunning(true)
+
+    const intervalMs = autoReviewConfig.interval * 1000
+    let mounted = true
+
+    const runAutoReview = async () => {
+      try {
+        if (!mounted) return
+
+        // 获取相关 MR
+        const relatedMRs = await api.listRelatedMergeRequests('opened')
+        setData(relatedMRs)
+        cleanupViewedMRs(relatedMRs, mode)
+        cleanupApprovedMRs(relatedMRs, mode)
+        // 更新本地状态
+        setViewedMRs(getViewedMRs(mode))
+        setApprovedMRs(getApprovedMRs(mode))
+
+        // 筛选指定创建者的 MR
+        const targetMRs = relatedMRs.filter(item => {
+          const key = getMRKey(item)
+          // 已经被批准过的跳过
+          const approvedMRs = getApprovedMRs(mode)
+          if (approvedMRs[key]) return false
+          // 筛选创建者
+          return autoReviewConfig.creators.includes(item.mr.author_name)
+        })
+
+        if (targetMRs.length === 0) return
+
+        // 处理每个符合条件的 MR
+        for (const item of targetMRs) {
+          if (!mounted) break
+          if (!item.project) continue
+
+          const key = getMRKey(item)
+          try {
+            // 调用 AI 总结接口
+            let summary = ''
+            await api.summarizeChanges(
+              item.project.id.toString(),
+              item.mr.iid,
+              (chunk) => {
+                summary += chunk
+              }
+            )
+
+            // 将 AI 总结作为评论回复
+            if (summary) {
+              await api.createMergeRequestNote(
+                item.project.id.toString(),
+                item.mr.iid,
+                { body: summary }
+              )
+            }
+
+            // 自动批准 MR
+            await api.approveMergeRequest(
+              item.project.id.toString(),
+              item.mr.iid
+            )
+
+            // 标记为已查看和已批准
+            saveViewedMR(key, mode)
+            saveApprovedMR(key, mode)
+
+            console.log(`[Auto Review] 成功处理 MR: ${item.mr.title} (${item.mr.author_name})`)
+          } catch (err) {
+            console.error(`[Auto Review] 处理 MR 失败: ${item.mr.title}`, err)
+          }
+        }
+      } catch (err) {
+        console.error('[Auto Review] 获取 MR 列表失败:', err)
+      }
+    }
+
+    // 首次执行
+    runAutoReview()
+
+    // 设置定时器
+    const timer = setInterval(runAutoReview, intervalMs)
+
+    return () => {
+      mounted = false
+      clearInterval(timer)
+      setAutoReviewRunning(false)
+    }
+  }, [autoReviewConfig, mode, open])
 
   const handleOpenMR = async (item: RelatedMR) => {
     if (!item.project) return
@@ -312,7 +425,7 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
     try {
       await navigator.clipboard.writeText(item.mr.web_url)
       message.success('链接已复制到剪贴板')
-    } catch (err) {
+    } catch {
       message.error('复制失败')
     }
   }
@@ -335,13 +448,33 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
   }
 
   return (
-    <Modal
-      title={mode === 'authored' ? '我创建的 Merge Requests' : '与我相关的 Merge Requests'}
-      open={open}
-      onCancel={onClose}
-      footer={null}
-      width={800}
-    >
+    <>
+      <Modal
+        title={
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <span>{mode === 'authored' ? '我创建的 Merge Requests' : '与我相关的 Merge Requests'}</span>
+            {mode === 'related' && (
+              <Space>
+                {autoReviewRunning && autoReviewConfig.enabled && (
+                  <Tag color="green" icon={<CheckCircleOutlined />}>自动 Review 运行中</Tag>
+                )}
+                <Tooltip title="自动 Review 设置">
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<SettingOutlined />}
+                    onClick={() => settingsModalRef.current?.open()}
+                  />
+                </Tooltip>
+              </Space>
+            )}
+          </div>
+        }
+        open={open}
+        onCancel={onClose}
+        footer={null}
+        width={800}
+      >
       <Spin spinning={loading}>
         <List
           dataSource={data}
@@ -455,6 +588,13 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
         />
       </Spin>
     </Modal>
+
+      {/* 自动 Review 设置弹窗 */}
+      <AutoReviewSettingsModal
+        ref={settingsModalRef}
+        onConfigChange={setAutoReviewConfig}
+      />
+    </>
   )
 }
 

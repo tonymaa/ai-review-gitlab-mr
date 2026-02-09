@@ -278,6 +278,18 @@ class APIClient {
     return response.data;
   }
 
+  async listUsers(search?: string): Promise<{
+    id: number;
+    name: string;
+    username: string;
+    avatar_url?: string;
+  }[]> {
+    const response = await this.client.get('/gitlab/users', {
+      params: search ? { search } : {},
+    });
+    return response.data;
+  }
+
   // ==================== AI ====================
 
   async startReview(projectId: string, mrIid: number, provider: string = 'openai'): Promise<{

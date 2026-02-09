@@ -62,6 +62,34 @@ class GitLabClient:
             logger.error(f"获取当前用户信息失败: {e}")
             return None
 
+    def list_users(
+        self,
+        search: Optional[str] = None,
+        per_page: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """
+        列出用户
+
+        Args:
+            search: 搜索关键词（匹配用户名、姓名或邮箱）
+            per_page: 每页数量
+
+        Returns:
+            用户列表，每个用户包含 id, name, username, avatar_url 等信息
+
+        Raises:
+            GitLabAPIError: 获取用户列表失败
+        """
+        try:
+            users = self._client.users.list(
+                search=search,
+                per_page=per_page,
+                get_all=True,
+            )
+            return [user.asdict() for user in users]
+        except GitlabError as e:
+            raise GitLabAPIError("获取用户列表失败", f"错误: {str(e)}")
+
     def get_project(self, project_id: str | int) -> ProjectInfo:
         """
         获取项目信息

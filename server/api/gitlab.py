@@ -679,3 +679,39 @@ async def add_discussion_note(
     except Exception as e:
         logger.error(f"添加回复失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class UserModel(BaseModel):
+    """用户模型"""
+    id: int
+    name: str
+    username: str
+    avatar_url: str | None = None
+
+
+@router.get("/users")
+async def list_users(
+    search: str | None = None,
+    client: GitLabClient = Depends(get_gitlab_client),
+):
+    """列出用户"""
+    try:
+        users = client.list_users(
+            search=search,
+            per_page=100,
+        )
+        return [
+            UserModel(
+                id=user.get("id"),
+                name=user.get("name"),
+                username=user.get("username"),
+                avatar_url=user.get("avatar_url"),
+            )
+            for user in users
+        ]
+
+    except GitLabException as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        logger.error(f"列出用户失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
