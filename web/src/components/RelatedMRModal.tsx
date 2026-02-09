@@ -319,7 +319,7 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
       clearInterval(timer)
       setAutoReviewRunning(false)
     }
-  }, [autoReviewConfig, mode, open])
+  }, [autoReviewConfig, mode])
 
   const handleOpenMR = async (item: RelatedMR) => {
     if (!item.project) return
