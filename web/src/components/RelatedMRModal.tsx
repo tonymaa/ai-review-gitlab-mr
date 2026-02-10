@@ -47,6 +47,17 @@ import { useApp } from '../contexts/AppContext'
 
 const { Text } = Typography
 
+// 根据字符串生成一致的颜色
+const stringToColor = (str: string): string => {
+  let hash = 0
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash)
+  }
+  // 使用 HSL 颜色空间，确保颜色鲜艳且可读
+  const hue = Math.abs(hash % 360)
+  return `hsla(${hue}, 100%, 30%, 0.7)`
+}
+
 interface ViewedMRState {
   [key: string]: boolean
 }
@@ -526,7 +537,7 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
                           <Tag color="blue" style={{ fontSize: 11, margin: 0 }}>
                             {item.mr.author_name}
                           </Tag>
-                          <Tag color="purple" style={{ fontSize: 11, margin: 0 }}>
+                          <Tag color={stringToColor(item.project?.name || 'Unknown')} style={{ fontSize: 11, margin: 0 }}>
                             {item.project?.name || 'Unknown'}
                           </Tag>
                           <Tag style={{ fontSize: 11, margin: 0 }}>
