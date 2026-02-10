@@ -3,7 +3,7 @@
  */
 
 import { type FC, useState, useEffect, useCallback, useRef } from 'react'
-import { Modal, List, Tag, Avatar, Space, Typography, Spin, Button, Tooltip, message } from 'antd'
+import { Modal, List, Tag, Avatar, Space, Typography, Spin, Button, Tooltip, message, Popconfirm } from 'antd'
 import type { ButtonProps } from 'antd/es/button'
 
 // 带自动 loading 状态的按钮组件
@@ -38,6 +38,7 @@ import {
   LinkOutlined,
   ExportOutlined,
   SettingOutlined,
+  WarningOutlined,
 } from '@ant-design/icons'
 import type { RelatedMR } from '../types'
 import type { AutoReviewConfig, AutoReviewSettingsModalRef } from './AutoReviewSettingsModal'
@@ -466,6 +467,49 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
     window.open(item.mr.web_url, '_blank')
   }
 
+  // 获取不能合并的原因
+  const getMergeDisabledReason = (item: RelatedMR): string | null => {
+    if (item.mr.has_conflicts) {
+      return '存在合并冲突'
+    }
+    if (item.mr.merge_status === 'cannot_be_merged') {
+      return '无法合并'
+    }
+    if (item.mr.merge_status === 'checking') {
+      return '正在检查合并状态'
+    }
+    if (item.mr.merge_status === 'unchecked') {
+      return '尚未检查合并状态'
+    }
+    if (item.mr.merge_status !== 'can_be_merged') {
+      return `合并状态: ${item.mr.merge_status || '未知'}`
+    }
+    return null
+  }
+
+  const canMerge = (item: RelatedMR): boolean => {
+    return !item.mr.has_conflicts && item.mr.merge_status === 'can_be_merged'
+  }
+
+  const handleMerge = async (item: RelatedMR) => {
+    if (!item.project) return false;
+    try {
+      await api.acceptMergeRequest(
+        item.project.id.toString(),
+        item.mr.iid,
+        {
+          should_remove_source_branch: false,
+        }
+      )
+      message.success('合并成功')
+      return true;
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { detail?: string } }; message?: string }
+      message.error(error.response?.data?.detail || error.message || '合并失败')
+      return false;
+    }
+  }
+
   const getStateTag = (state: string) => {
     switch (state) {
       case 'opened':
@@ -584,35 +628,61 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
 
                 {/* 底部操作按钮 */}
                 <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                  <LoadingButton
-                    size="small"
-                    onClick={() => handleSendLGTM(item)}
-                  >
-                    发送LGTM并批准
-                  </LoadingButton>
-                  {approvedMRs[getMRKey(item)] ? (
-                    <LoadingButton
-                      size="small"
-                      danger
-                      onClick={() => handleUnapprove(item)}
-                    >
-                      取消批准
-                    </LoadingButton>
+                  {mode === 'authored' ? (
+                    // 我创建的 MR：显示合并按钮
+                    <>
+                      {canMerge(item) ? (
+                        <MergeButton item={item} handleMerge={handleMerge}/>
+                      ): (
+                        <Button
+                          size="small"
+                          type="primary"
+                          disabled
+                        >
+                          <WarningOutlined /> {getMergeDisabledReason(item) || '无法合并'}
+                        </Button>
+                      )}
+                      <Button
+                        size="small"
+                        onClick={() => handleOpenMR(item)}
+                      >
+                        打开
+                      </Button>
+                    </>
                   ) : (
-                    <LoadingButton
-                      size="small"
-                      type="primary"
-                      onClick={() => handleApprove(item)}
-                    >
-                      批准
-                    </LoadingButton>
+                    // 与我相关的 MR：显示批准相关按钮
+                    <>
+                      <LoadingButton
+                        size="small"
+                        onClick={() => handleSendLGTM(item)}
+                      >
+                        发送LGTM并批准
+                      </LoadingButton>
+                      {approvedMRs[getMRKey(item)] ? (
+                        <LoadingButton
+                          size="small"
+                          danger
+                          onClick={() => handleUnapprove(item)}
+                        >
+                          取消批准
+                        </LoadingButton>
+                      ) : (
+                        <LoadingButton
+                          size="small"
+                          type="primary"
+                          onClick={() => handleApprove(item)}
+                        >
+                          批准
+                        </LoadingButton>
+                      )}
+                      <Button
+                        size="small"
+                        onClick={() => handleOpenMR(item)}
+                      >
+                        打开
+                      </Button>
+                    </>
                   )}
-                  <Button
-                    size="small"
-                    onClick={() => handleOpenMR(item)}
-                  >
-                    打开
-                  </Button>
                 </div>
               </div>
             </List.Item>
@@ -627,6 +697,47 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
         onConfigChange={setAutoReviewConfig}
       />
     </>
+  )
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function MergeButton(props: any){
+  const {handleMerge, item} = props
+  const [merged, setMerged] = useState(false)
+  const [loading, setLoading] = useState(false)
+
+  const onConfirm = async () => {
+    setLoading(true)
+    try {
+      const success = await handleMerge(item)
+      if (success) {
+        setMerged(true)
+      }
+    }finally{
+      setLoading(false)
+    }
+  }
+
+  if (merged) {
+    return null
+  }
+
+  return (
+    <Popconfirm
+      title="确认合并"
+      description={`确定要将 ${item.mr.source_branch} 合并到 ${item.mr.target_branch} 吗？`}
+      onConfirm={onConfirm}
+      okText="确定"
+      cancelText="取消"
+    >
+      <Button
+        size="small"
+        type="primary"
+        loading={loading}
+      >
+        合并
+      </Button>
+    </Popconfirm>
   )
 }
 

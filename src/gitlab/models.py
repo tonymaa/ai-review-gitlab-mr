@@ -86,6 +86,10 @@ class MergeRequestInfo:
     has_conflicts: bool = False
     blocking_discussions_resolved: bool = True
 
+    # 合并状态
+    merge_status: Optional[str] = None  # can_be_merged, cannot_be_merged, checking, unchecked
+    can_merge: bool = False
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "MergeRequestInfo":
         """从字典创建MR对象"""
@@ -144,6 +148,8 @@ class MergeRequestInfo:
             blocking_discussions_resolved=data.get(
                 "blocking_discussions_resolved", True
             ),
+            merge_status=data.get("merge_status"),
+            can_merge=data.get("can_merge", False) or data.get("merge_status") == "can_be_merged",
         )
 
     def to_database_dict(self) -> Dict[str, Any]:

@@ -153,6 +153,10 @@ class MRModel(BaseModel):
     approved_by_current_user: bool = False
     assignees: list[dict] = []
     reviewers: list[dict] = []
+    # 合并相关字段
+    merge_status: str | None = None
+    has_conflicts: bool = False
+    can_merge: bool = False
 
     @classmethod
     def from_info(cls, info: MergeRequestInfo) -> "MRModel":
@@ -192,6 +196,9 @@ class MRModel(BaseModel):
             approved_by_current_user=getattr(info, 'approved_by_current_user', False),
             assignees=assignees_list,
             reviewers=reviewers_list,
+            merge_status=getattr(info, 'merge_status', None),
+            has_conflicts=getattr(info, 'has_conflicts', False),
+            can_merge=getattr(info, 'can_merge', False),
         )
 
 
@@ -239,6 +246,13 @@ class CommentRequest(BaseModel):
     file_path: str | None = None
     line_number: int | None = None
     line_type: str = "new"  # new, old
+
+
+class AcceptMergeRequestRequest(BaseModel):
+    """合并 MR 请求"""
+    merge_commit_message: str | None = None
+    should_remove_source_branch: bool = False
+    merge_when_pipeline_succeeds: bool = False
 
 
 # ==================== API 端点 ====================
@@ -623,6 +637,38 @@ async def get_merge_request_approval_state(
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         logger.error(f"获取 MR 批准状态失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/projects/{project_id}/merge-requests/{mr_iid}/merge")
+async def accept_merge_request(
+    project_id: str,
+    mr_iid: int,
+    request: AcceptMergeRequestRequest | None = None,
+    client: GitLabClient = Depends(get_gitlab_client),
+):
+    """合并（接受）Merge Request"""
+    try:
+        # 如果没有提供请求体，使用默认值
+        merge_commit_message = request.merge_commit_message if request else None
+        should_remove_source_branch = request.should_remove_source_branch if request else False
+
+        success = client.accept_merge_request(
+            project_id=project_id,
+            mr_iid=mr_iid,
+            merge_commit_message=merge_commit_message,
+            should_remove_source_branch=should_remove_source_branch,
+        )
+
+        if success:
+            return {"status": "ok", "message": "合并成功"}
+        else:
+            raise HTTPException(status_code=500, detail="合并失败")
+
+    except GitLabException as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        logger.error(f"合并 MR 失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

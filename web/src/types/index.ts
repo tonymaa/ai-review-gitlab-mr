@@ -86,6 +86,12 @@ export interface MergeRequest {
   approved_by_current_user: boolean;
   assignees: Array<{ id: number; name: string; avatar_url?: string }>;
   reviewers: Array<{ id: number; name: string; avatar_url?: string }>;
+  /** 合并状态 */
+  merge_status?: 'can_be_merged' | 'cannot_be_merged' | 'checking' | 'unchecked';
+  /** 是否有冲突 */
+  has_conflicts?: boolean;
+  /** 是否可以合并 */
+  can_merge?: boolean;
 }
 
 /** 相关 MR 和项目 */

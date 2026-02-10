@@ -264,6 +264,19 @@ class APIClient {
     return response.data;
   }
 
+  async acceptMergeRequest(
+    projectId: string,
+    mrIid: number,
+    options?: {
+      merge_commit_message?: string;
+      should_remove_source_branch?: boolean;
+      merge_when_pipeline_succeeds?: boolean;
+    }
+  ): Promise<{ status: string; message: string }> {
+    const response = await this.client.put(`/gitlab/projects/${projectId}/merge-requests/${mrIid}/merge`, options);
+    return response.data;
+  }
+
   async listRelatedMergeRequests(state: 'opened' | 'closed' | 'merged' | 'all' = 'opened'): Promise<RelatedMR[]> {
     const response = await this.client.get('/gitlab/merge-requests/related', {
       params: { state },
