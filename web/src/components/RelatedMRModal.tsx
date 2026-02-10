@@ -47,6 +47,22 @@ import { useApp } from '../contexts/AppContext'
 
 const { Text } = Typography
 
+// 排序函数：优先按项目名称排序，然后按创建时间排序
+const sortMRs = (items: RelatedMR[]): RelatedMR[] => {
+  return [...items].sort((a, b) => {
+    // 先按项目名称排序
+    const projectNameA = a.project?.name || ''
+    const projectNameB = b.project?.name || ''
+    const nameCompare = projectNameA.localeCompare(projectNameB, 'zh-CN')
+    if (nameCompare !== 0) return nameCompare
+
+    // 项目名称相同时，按创建时间排序（新的在前）
+    const timeA = new Date(a.mr.created_at).getTime()
+    const timeB = new Date(b.mr.created_at).getTime()
+    return timeB - timeA
+  })
+}
+
 // 根据字符串生成一致的颜色
 const stringToColor = (str: string): string => {
   let hash = 0
@@ -212,7 +228,7 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
       // 更新本地状态
       setViewedMRs(getViewedMRs(mode))
       setApprovedMRs(getApprovedMRs(mode))
-      setData(result)
+      setData(sortMRs(result))
     } catch (err: unknown) {
       const error = err as { response?: { data?: { detail?: string } }; message?: string }
       message.error(error.response?.data?.detail || error.message || '加载 MR 列表失败')
@@ -254,7 +270,7 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
 
         // 获取相关 MR
         const relatedMRs = await api.listRelatedMergeRequests('opened')
-        setData(relatedMRs)
+        setData(sortMRs(relatedMRs))
         cleanupViewedMRs(relatedMRs, mode)
         cleanupApprovedMRs(relatedMRs, mode)
         // 更新本地状态
