@@ -65,13 +65,18 @@ const sortMRs = (items: RelatedMR[]): RelatedMR[] => {
 
 // 根据字符串生成一致的颜色
 const stringToColor = (str: string): string => {
-  let hash = 0
+  // 使用 FNV-1a 哈希算法，分布更均匀
+  let hash = 2166136261
   for (let i = 0; i < str.length; i++) {
-    hash = str.charCodeAt(i) + ((hash << 5) - hash)
+    hash ^= str.charCodeAt(i)
+    hash = Math.imul(hash, 16777619)
   }
-  // 使用 HSL 颜色空间，确保颜色鲜艳且可读
+  // 使用黄金角度来确保色相分布更均匀
+  const goldenAngle = 137.508
   const hue = Math.abs(hash % 360)
-  return `hsla(${hue}, 100%, 30%, 0.7)`
+  // 结合黄金角度偏移，进一步打散相近字符串的颜色
+  const finalHue = (hue + str.length * goldenAngle) % 360
+  return `hsla(${finalHue}, 100%, 30%, 0.8)`
 }
 
 interface ViewedMRState {
