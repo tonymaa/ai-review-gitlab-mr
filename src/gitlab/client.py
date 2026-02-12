@@ -13,6 +13,7 @@ from .models import (
     DiffFile,
     ProjectInfo,
     MRState,
+    GitLabUser,
 )
 from ..core.database import DatabaseManager
 from ..core.exceptions import (
@@ -389,15 +390,22 @@ class GitLabClient:
                 # 提取 approval 状态
                 step3_start = time.time()
                 try:
-                    if mr.detailed_merge_status == 'approvals_missing' and project:
+                    if project:
                         mr_obj = project.mergerequests.get(mr.iid)
                         approval = mr_obj.approvals.get()
                         approved_by = approval.approved_by if hasattr(approval, 'approved_by') else []
                         for approver in approved_by:
                             user_dict = approver.asdict() if hasattr(approver, 'asdict') else approver
-                            if user_dict.get('user', {}).get('id') == current_user_id:
-                                mr_info.approved_by_current_user = True
-                                break
+                            user_data = user_dict.get('user', {}) if isinstance(user_dict, dict) else user_dict
+                            if isinstance(user_data, dict):
+                                user_info = GitLabUser(
+                                    id=user_data.get('id', 0),
+                                    username=user_data.get('username', ''),
+                                    name=user_data.get('name', ''),
+                                    avatar_url=user_data.get('avatar_url'),
+                                )
+                                mr_info.approved_by.append(user_info)
+                                
                 except Exception as e:
                     logger.debug(f"解析MR {mr.iid} 的approval状态失败: {e}")
                 step3_time = time.time() - step3_start

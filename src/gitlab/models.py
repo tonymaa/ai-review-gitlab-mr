@@ -71,6 +71,7 @@ class MergeRequestInfo:
     changed_files: int = 0
     user_notes_count: int = 0
     approved_by_current_user: bool = False
+    approved_by: List[GitLabUser] = field(default_factory=list)
 
     # 链接
     web_url: Optional[str] = None

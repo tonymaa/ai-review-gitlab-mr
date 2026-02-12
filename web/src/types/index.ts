@@ -92,6 +92,7 @@ export interface MergeRequest {
   has_conflicts?: boolean;
   /** 是否可以合并 */
   can_merge?: boolean;
+  approved_by?: Array<{ id: number; username: string; name: string; avatar_url?: string }>;
 }
 
 /** 相关 MR 和项目 */

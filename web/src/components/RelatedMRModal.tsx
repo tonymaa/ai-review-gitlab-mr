@@ -591,8 +591,23 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
                           <Tag color="red">New</Tag>
                         )}
                         {getStateTag(item.mr.state)}
-                        {approvedMRs[getMRKey(item)] && (
+                        {(mode !== 'authored' && approvedMRs[getMRKey(item)]) && (
                           <Tag icon={<CheckCircleOutlined />} color="success">已批准</Tag>
+                        )}
+                        {(mode === 'authored' && item.mr.approved_by && item.mr.approved_by.length > 0) && (
+                          <Tooltip
+                            title={
+                              <Space style={{ flexDirection: 'column', gap: 0 }} size={0}>
+                                {item.mr.approved_by.map((approver: { name: string; username?: string }) => (
+                                  <Text key={approver.username || approver.name}>
+                                    {approver.name}
+                                  </Text>
+                                ))}
+                              </Space>
+                            }
+                          >
+                            <Tag icon={<CheckCircleOutlined />} color="success">已批准</Tag>
+                          </Tooltip>
                         )}
                       </Space>
                     }

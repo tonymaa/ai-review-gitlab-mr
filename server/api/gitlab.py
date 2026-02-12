@@ -151,6 +151,7 @@ class MRModel(BaseModel):
     updated_at: str
     user_notes_count: int = 0
     approved_by_current_user: bool = False
+    approved_by: list[dict] = []
     assignees: list[dict] = []
     reviewers: list[dict] = []
     # 合并相关字段
@@ -168,7 +169,7 @@ class MRModel(BaseModel):
         author_name = info.author.name if info.author else "Unknown"
         author_avatar = info.author.avatar_url if info.author else None
 
-        # 处理 assignees 和 reviewers
+        # 处理 assignees, reviewers, approved_by
         assignees_list = [
             {"id": a.id, "name": a.name, "avatar_url": a.avatar_url}
             for a in info.assignees
@@ -176,6 +177,10 @@ class MRModel(BaseModel):
         reviewers_list = [
             {"id": r.id, "name": r.name, "avatar_url": r.avatar_url}
             for r in info.reviewers
+        ]
+        approved_by_list = [
+            {"id": a.id, "name": a.name, "username": a.username, "avatar_url": a.avatar_url}
+            for a in getattr(info, 'approved_by', [])
         ]
 
         return cls(
@@ -194,6 +199,7 @@ class MRModel(BaseModel):
             updated_at=updated_at_str,
             user_notes_count=info.user_notes_count,
             approved_by_current_user=getattr(info, 'approved_by_current_user', False),
+            approved_by=approved_by_list,
             assignees=assignees_list,
             reviewers=reviewers_list,
             merge_status=getattr(info, 'merge_status', None),
