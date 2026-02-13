@@ -66,7 +66,6 @@ ENV PATH=/home/appuser/.local/bin:$PATH
 COPY server/ ./server/
 COPY src/ ./src/
 COPY server.py ./
-COPY config.yaml ./
 COPY config.example.yaml ./
 COPY .env.example ./.env
 
