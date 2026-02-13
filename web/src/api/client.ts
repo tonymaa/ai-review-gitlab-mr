@@ -273,7 +273,7 @@ class APIClient {
       merge_when_pipeline_succeeds?: boolean;
     }
   ): Promise<{ status: string; message: string }> {
-    const response = await this.client.put(`/gitlab/projects/${projectId}/merge-requests/${mrIid}/merge`, options);
+    const response = await this.client.put(`/gitlab/projects/${projectId}/merge-requests/${mrIid}/merge`, options, { timeout: 0 });
     return response.data;
   }
 
