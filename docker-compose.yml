@@ -22,6 +22,10 @@ services:
       
       # App Configuration
       - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-true}
+
+      # JWT Configuration
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-secret-key-change-this-in-production}
+      - JWT_EXPIRE_MINUTES=${JWT_EXPIRE_MINUTES:-259200}
     volumes:
       # Persist data and cache
       - ./data:/app/data

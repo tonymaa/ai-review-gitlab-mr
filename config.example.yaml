@@ -109,6 +109,22 @@ app:
     file: "./logs/app.log"
 
 # ================================
+# JWT 配置
+# ================================
+jwt:
+  # JWT 签名密钥 (敏感信息，建议使用环境变量 JWT_SECRET_KEY)
+  # 生产环境请务必修改为强随机密钥，可用以下命令生成:
+  #   python -c "import secrets; print(secrets.token_urlsafe(32))"
+  secret_key: "your-secret-key-change-this-in-production"
+
+  # JWT 算法 (可选: HS256, RS256)
+  algorithm: "HS256"
+
+  # Token 过期时间 (分钟)
+  # 默认 180 天，生产环境建议设置为 30-60 分钟
+  expire_minutes: 259200  # 60 * 24 * 180
+
+# ================================
 # 配置说明
 # ================================
 #
@@ -120,4 +136,5 @@ app:
 # 3. 敏感配置建议:
 #    - GITLAB_URL 和 GITLAB_TOKEN 建议放在 .env
 #    - OPENAI_API_KEY 建议放在 .env
+#    - JWT_SECRET_KEY 建议放在 .env
 #    - 非敏感配置 (如 UI 布局) 可以放在 config.yaml

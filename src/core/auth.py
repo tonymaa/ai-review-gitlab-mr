@@ -11,10 +11,27 @@ from jose import JWTError, jwt
 
 logger = logging.getLogger(__name__)
 
-# JWT 配置
-SECRET_KEY = "your-secret-key-change-this-in-production"  # 生产环境应该从配置文件读取
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 180  # 180天
+
+def _get_jwt_config():
+    """延迟导入配置，避免循环导入"""
+    from src.core.config import settings
+    return settings.jwt
+
+
+# JWT 配置（从配置读取）
+def get_secret_key() -> str:
+    """获取JWT密钥"""
+    return _get_jwt_config().secret_key
+
+
+def get_algorithm() -> str:
+    """获取JWT算法"""
+    return _get_jwt_config().algorithm
+
+
+def get_expire_minutes() -> int:
+    """获取Token过期时间（分钟）"""
+    return _get_jwt_config().expire_minutes
 
 
 def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
@@ -33,10 +50,10 @@ def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta]
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = datetime.utcnow() + timedelta(minutes=get_expire_minutes())
 
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    encoded_jwt = jwt.encode(to_encode, get_secret_key(), algorithm=get_algorithm())
 
     return encoded_jwt
 
@@ -53,7 +70,7 @@ def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
     """
     try:
         logger.info(f"[decode_access_token] Attempting to decode token, length: {len(token) if token else 0}")
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, get_secret_key(), algorithms=[get_algorithm()])
         logger.info(f"[decode_access_token] Token decoded successfully, payload: {payload}")
         return payload
     except JWTError as e:

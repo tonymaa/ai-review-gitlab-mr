@@ -84,6 +84,19 @@ class LoggingConfig(BaseSettings):
     file: str = Field(default="./logs/app.log", description="日志文件路径")
 
 
+class JWTConfig(BaseSettings):
+    """JWT配置"""
+
+    model_config = SettingsConfigDict(env_prefix="JWT_")
+
+    secret_key: str = Field(
+        default="your-secret-key-change-this-in-production",
+        description="JWT签名密钥"
+    )
+    algorithm: str = Field(default="HS256", description="JWT算法")
+    expire_minutes: int = Field(default=60 * 24 * 180, description="Token过期时间(分钟)")
+
+
 class AppConfig(BaseSettings):
     """应用配置"""
 
@@ -109,6 +122,7 @@ class Settings:
         self._gitlab: Optional[GitLabConfig] = None
         self._ai: Optional[AIConfig] = None
         self._app: Optional[AppConfig] = None
+        self._jwt: Optional[JWTConfig] = None
 
     @staticmethod
     def _find_config_path() -> str:
@@ -228,6 +242,24 @@ class Settings:
                     if logging_config.get("file"):
                         self._app.logging.file = logging_config["file"]
         return self._app
+
+    @property
+    def jwt(self) -> JWTConfig:
+        """获取JWT配置"""
+        if self._jwt is None:
+            # 优先从环境变量加载
+            self._jwt = JWTConfig()
+            yaml_config = self.load_yaml()
+            if "jwt" in yaml_config:
+                jwt_config = yaml_config["jwt"]
+                # 如果环境变量为默认值，从YAML配置补充
+                if jwt_config.get("secret_key") and self._jwt.secret_key == "your-secret-key-change-this-in-production":
+                    self._jwt.secret_key = jwt_config["secret_key"]
+                if jwt_config.get("algorithm"):
+                    self._jwt.algorithm = jwt_config["algorithm"]
+                if jwt_config.get("expire_minutes"):
+                    self._jwt.expire_minutes = jwt_config["expire_minutes"]
+        return self._jwt
 
     def ensure_directories(self) -> None:
         """确保必要的目录存在"""
