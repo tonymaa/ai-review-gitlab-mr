@@ -20,6 +20,12 @@ wheels/
 .installed.cfg
 *.egg
 
+# Build outputs
+build_onefile/
+build_temp/
+*.exe
+*.spec
+
 # Virtual Environment
 venv/
 ENV/
