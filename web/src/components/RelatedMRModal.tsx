@@ -321,15 +321,22 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
               )
             }
 
-            // 自动批准 MR
-            await api.approveMergeRequest(
-              item.project.id.toString(),
-              item.mr.iid
+            // 判断是否应该自动批准
+            const shouldAutoApprove = !summary || (
+              autoReviewConfig.keywords.length === 0 ||
+              autoReviewConfig.keywords.some(keyword => summary.indexOf(keyword) !== -1)
             )
 
+            if (shouldAutoApprove) {
+              // 自动批准 MR
+              await api.approveMergeRequest(
+                item.project.id.toString(),
+                item.mr.iid
+              )
+              saveApprovedMR(key, mode)
+            }
             // 标记为已查看和已批准
             saveViewedMR(key, mode)
-            saveApprovedMR(key, mode)
 
             console.log(`[Auto Review] 成功处理 MR: ${item.mr.title} (${item.mr.author_name})`)
           } catch (err) {

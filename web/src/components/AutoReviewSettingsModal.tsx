@@ -12,6 +12,7 @@ export interface AutoReviewConfig {
   enabled: boolean
   creators: string[]  // MR 创建者用户名列表
   interval: number    // 检查间隔（秒）
+  keywords: string[]  // 自动批准关键词列表，为空时默认批准
 }
 
 export interface AutoReviewSettingsModalRef {
@@ -24,6 +25,7 @@ export const getDefaultAutoReviewConfig = (): AutoReviewConfig => ({
   enabled: false,
   creators: [],
   interval: 120,
+  keywords: [],
 })
 
 // ==================== 配置管理 ====================
@@ -169,6 +171,19 @@ export const AutoReviewSettingsModal = forwardRef<AutoReviewSettingsModalRef, Au
             <InputNumber min={5} max={300} style={{ width: '100%' }} />
           </Form.Item>
 
+          <Form.Item
+            label="自动批准关键词"
+            name="keywords"
+            tooltip="AI 总结中包含这些关键词时才自动批准，为空时默认批准"
+          >
+            <Select
+              mode="tags"
+              placeholder="输入关键词后回车添加"
+              options={[]}
+              open={false}
+            />
+          </Form.Item>
+
           <Divider />
 
           <div style={{ fontSize: 12, color: '#999' }}>
@@ -178,7 +193,7 @@ export const AutoReviewSettingsModal = forwardRef<AutoReviewSettingsModalRef, Au
               <li>筛选指定创建者的 MR</li>
               <li>如果是新建的 MR，调用 AI 总结接口</li>
               <li>将 AI 总结作为评论回复到 MR</li>
-              <li>自动批准该 MR</li>
+              <li>根据关键词配置自动批准：未配置关键词时默认批准，配置后需总结中包含关键词才批准</li>
             </ol>
           </div>
         </Form>
