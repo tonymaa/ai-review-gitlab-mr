@@ -417,6 +417,65 @@ class APIClient {
       reader.releaseLock();
     }
   }
+
+  // ==================== Auto Review ====================
+
+  /**
+   * 获取自动审查配置
+   */
+  async getAutoReviewConfig(): Promise<AutoReviewConfig> {
+    const response = await this.client.get('/auto-review/config');
+    return response.data;
+  }
+
+  /**
+   * 更新自动审查配置
+   */
+  async updateAutoReviewConfig(config: AutoReviewConfig): Promise<{ status: string; message: string }> {
+    const response = await this.client.post('/auto-review/config', config);
+    return response.data;
+  }
+
+  /**
+   * 获取自动审查状态
+   */
+  async getAutoReviewStatus(): Promise<{
+    is_enabled: boolean;
+    is_running: boolean;
+    last_run_at: string | null;
+    next_run_at: string | null;
+    processed_count: number;
+    last_processed_mr: Record<string, unknown> | null;
+  }> {
+    const response = await this.client.get('/auto-review/status');
+    return response.data;
+  }
+
+  /**
+   * 立即执行一次自动审查
+   */
+  async runAutoReviewNow(): Promise<{ status: string; message: string }> {
+    const response = await this.client.post('/auto-review/run-now');
+    return response.data;
+  }
+}
+
+// ==================== 类型定义 ====================
+
+/**
+ * 自动审查配置
+ */
+export interface AutoReviewConfig {
+  enabled: boolean;
+  interval_seconds: number;
+  target_creators: string[];
+  target_projects: string[];
+  auto_approve_keywords: string[];
+  auto_approve_mode: 'always' | 'keyword_only' | 'never';
+  add_as_comment: boolean;
+  is_running?: boolean;
+  last_run_at?: string | null;
+  next_run_at?: string | null;
 }
 
 // 单例实例

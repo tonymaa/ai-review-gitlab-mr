@@ -16,8 +16,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.core.config import settings
 from src.core.database import DatabaseManager
-from server.api import gitlab, ai, config, health, auth
+from server.api import gitlab, ai, config, health, auth, auto_review
 from server.models.session import SessionManager
+from src.scheduler.auto_review_scheduler import AutoReviewScheduler
 
 
 logger = logging.getLogger(__name__)
@@ -25,13 +26,14 @@ logger = logging.getLogger(__name__)
 # 全局数据库管理器
 db_manager: DatabaseManager | None = None
 session_manager = SessionManager()
+auto_review_scheduler: AutoReviewScheduler | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     # 启动时初始化
-    global db_manager
+    global db_manager, auto_review_scheduler
     logger.info("启动 FastAPI 服务器...")
 
     # 确保必要目录存在
@@ -48,10 +50,30 @@ async def lifespan(app: FastAPI):
     app.state.db = db_manager
     app.state.session_manager = session_manager
 
+    # 初始化自动审查调度器
+    try:
+        auto_review_scheduler = AutoReviewScheduler(db_manager)
+        app.state.auto_review_scheduler = auto_review_scheduler
+
+        # 将调度器注入到数据库引擎（方便API访问）
+        db_manager.engine.auto_review_scheduler = auto_review_scheduler
+
+        # 启动所有已启用自动审查的用户任务
+        await _start_enabled_auto_review_tasks(db_manager, auto_review_scheduler)
+
+        logger.info("自动审查调度器初始化成功")
+    except Exception as e:
+        logger.error(f"自动审查调度器初始化失败: {e}")
+
     yield
 
     # 关闭时清理
     logger.info("关闭 FastAPI 服务器...")
+
+    # 停止所有自动审查任务
+    if auto_review_scheduler:
+        await auto_review_scheduler.stop_all()
+        logger.info("自动审查任务已全部停止")
 
 
 def create_app() -> FastAPI:
@@ -78,6 +100,7 @@ def create_app() -> FastAPI:
     app.include_router(config.router, prefix="/api/config", tags=["Config"])
     app.include_router(gitlab.router, prefix="/api/gitlab", tags=["GitLab"])
     app.include_router(ai.router, prefix="/api/ai", tags=["AI"])
+    app.include_router(auto_review.router, prefix="/api/auto-review", tags=["AutoReview"])
 
     # 静态文件服务 (React 构建产物)
     web_dist = Path(__file__).parent.parent / "web" / "dist"
@@ -107,6 +130,24 @@ def run_server(host: str = "0.0.0.0", port: int = 8000, reload: bool = False):
         reload=reload,
         log_level="info",
     )
+
+
+async def _start_enabled_auto_review_tasks(
+    db: DatabaseManager,
+    scheduler: "AutoReviewScheduler",
+):
+    """启动所有已启用自动审查的用户任务"""
+    try:
+        enabled_configs = db.list_enabled_auto_review_configs()
+        for config in enabled_configs:
+            user_id = config["user_id"]
+            try:
+                await scheduler.start_user_task(user_id)
+                logger.info(f"已启动用户 {user_id} 的自动审查任务")
+            except Exception as e:
+                logger.error(f"启动用户 {user_id} 的自动审查任务失败: {e}")
+    except Exception as e:
+        logger.error(f"获取已启用自动审查配置失败: {e}")
 
 
 if __name__ == "__main__":

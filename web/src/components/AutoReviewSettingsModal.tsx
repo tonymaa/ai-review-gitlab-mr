@@ -1,53 +1,27 @@
 /**
- * 自动 Review 设置弹窗组件
+ * 自动 Review 设置弹窗组件 - 使用后端API
  */
 
-import { useState, useEffect, useImperativeHandle, forwardRef } from 'react'
-import { Modal as AntModal, Form, Switch, Select, InputNumber, Divider, message } from 'antd'
-import { api } from '../api/client'
+import { useState, useImperativeHandle, forwardRef } from 'react'
+import { Modal as AntModal, Form, Switch, Select, InputNumber, Divider, message, Space, Tag } from 'antd'
+import { api, type AutoReviewConfig } from '../api/client'
 
 // ==================== 类型定义 ====================
-
-export interface AutoReviewConfig {
-  enabled: boolean
-  creators: string[]  // MR 创建者用户名列表
-  interval: number    // 检查间隔（秒）
-  keywords: string[]  // 自动批准关键词列表，为空时默认批准
-}
 
 export interface AutoReviewSettingsModalRef {
   open: () => void
 }
 
-const AUTO_REVIEW_CONFIG_KEY = 'auto_review_config'
-
+// 默认配置
 export const getDefaultAutoReviewConfig = (): AutoReviewConfig => ({
   enabled: false,
-  creators: [],
-  interval: 120,
-  keywords: [],
+  target_creators: [],
+  interval_seconds: 120,
+  target_projects: [],
+  auto_approve_keywords: [],
+  auto_approve_mode: 'always',
+  add_as_comment: true,
 })
-
-// ==================== 配置管理 ====================
-
-export const getAutoReviewConfig = (): AutoReviewConfig => {
-  try {
-    const stored = localStorage.getItem(AUTO_REVIEW_CONFIG_KEY)
-    return stored ? { ...getDefaultAutoReviewConfig(), ...JSON.parse(stored) } : getDefaultAutoReviewConfig()
-  } catch {
-    return getDefaultAutoReviewConfig()
-  }
-}
-
-export const saveAutoReviewConfig = (config: AutoReviewConfig) => {
-  try {
-    localStorage.setItem(AUTO_REVIEW_CONFIG_KEY, JSON.stringify(config))
-    // 触发自定义事件通知配置更新
-    window.dispatchEvent(new CustomEvent('autoReviewConfigChanged', { detail: config }))
-  } catch {
-    // ignore storage errors
-  }
-}
 
 // ==================== 组件 ====================
 
@@ -61,30 +35,32 @@ export const AutoReviewSettingsModal = forwardRef<AutoReviewSettingsModalRef, Au
     const [config, setConfig] = useState<AutoReviewConfig>(getDefaultAutoReviewConfig())
     const [availableUsers, setAvailableUsers] = useState<string[]>([])
     const [loadingUsers, setLoadingUsers] = useState(false)
+    const [loading, setLoading] = useState(false)
     const [form] = Form.useForm()
 
     // 暴露 open 方法给父组件
     useImperativeHandle(ref, () => ({
       open: () => {
-        // 打开时重新加载配置和用户列表
-        setConfig(getAutoReviewConfig())
-        form.setFieldsValue(getAutoReviewConfig())
         setOpen(true)
+        loadConfig()
         loadAvailableUsers()
       },
     }))
 
-    // 监听配置变化事件
-    useEffect(() => {
-      const handleConfigChange = (e: CustomEvent<AutoReviewConfig>) => {
-        setConfig(e.detail)
-        onConfigChange?.(e.detail)
+    // 从后端加载配置
+    const loadConfig = async () => {
+      setLoading(true)
+      try {
+        const data = await api.getAutoReviewConfig()
+        setConfig(data)
+        form.setFieldsValue(data)
+      } catch (err: any) {
+        console.error('加载自动审查配置失败:', err)
+        message.error(err.response?.data?.detail || '加载配置失败')
+      } finally {
+        setLoading(false)
       }
-      window.addEventListener('autoReviewConfigChanged', handleConfigChange as EventListener)
-      return () => {
-        window.removeEventListener('autoReviewConfigChanged', handleConfigChange as EventListener)
-      }
-    }, [onConfigChange])
+    }
 
     // 加载可用用户列表（从 GitLab API 获取）
     const loadAvailableUsers = async () => {
@@ -101,21 +77,33 @@ export const AutoReviewSettingsModal = forwardRef<AutoReviewSettingsModalRef, Au
       }
     }
 
-    const handleOk = () => {
-      form.validateFields().then((values) => {
-        const newConfig = values as AutoReviewConfig
+    const handleOk = async () => {
+      try {
+        const values = await form.validateFields()
 
         // 验证：如果启用但没有配置创建者，提示错误
-        if (newConfig.enabled && (!newConfig.creators || newConfig.creators.length === 0)) {
+        if (values.enabled && (!values.target_creators || values.target_creators.length === 0)) {
           message.warning('请至少添加一个 MR 创建者')
           return
         }
 
-        saveAutoReviewConfig(newConfig)
+        setLoading(true)
+        await api.updateAutoReviewConfig(values)
+
+        const newConfig = values as AutoReviewConfig
         setConfig(newConfig)
         onConfigChange?.(newConfig)
         setOpen(false)
-      })
+        message.success('配置已保存')
+      } catch (err: any) {
+        console.error('保存配置失败:', err)
+        // 表单验证错误不显示消息
+        if (!err.errorFields) {
+          message.error(err.response?.data?.detail || '保存失败')
+        }
+      } finally {
+        setLoading(false)
+      }
     }
 
     const handleCancel = () => {
@@ -123,7 +111,13 @@ export const AutoReviewSettingsModal = forwardRef<AutoReviewSettingsModalRef, Au
       form.setFieldsValue(config)
       setOpen(false)
     }
-    
+
+    // 监听配置变化，自动重启任务
+    const handleEnabledChange = (checked: boolean) => {
+      if (checked && (!config.target_creators || config.target_creators.length === 0)) {
+        // 不在这里提示，让表单验证处理
+      }
+    }
 
     return (
       <AntModal
@@ -133,24 +127,45 @@ export const AutoReviewSettingsModal = forwardRef<AutoReviewSettingsModalRef, Au
         onOk={handleOk}
         okText="保存"
         cancelText="取消"
-        width={500}
+        width={550}
+        confirmLoading={loading}
+        maskClosable={false}
       >
         <Form
           form={form}
           layout="vertical"
           initialValues={config}
         >
+          {/* 状态显示 */}
+          {(config.is_running || config.last_run_at || config.next_run_at) && (
+            <div style={{ marginBottom: 16, padding: 12, background: '#f5f5f5', borderRadius: 4 }}>
+              <Space size={4} style={{ width: '100%' }} vertical>
+                {config.is_running && <Tag color="green">运行中</Tag>}
+                {config.last_run_at && (
+                  <div style={{ fontSize: 12, color: '#666' }}>
+                    上次运行: {new Date(config.last_run_at).toLocaleString('zh-CN')}
+                  </div>
+                )}
+                {config.next_run_at && (
+                  <div style={{ fontSize: 12, color: '#666' }}>
+                    下次运行: {new Date(config.next_run_at).toLocaleString('zh-CN')}
+                  </div>
+                )}
+              </Space>
+            </div>
+          )}
+
           <Form.Item
             label="启用自动 Review"
             name="enabled"
             valuePropName="checked"
           >
-            <Switch />
+            <Switch onChange={handleEnabledChange} />
           </Form.Item>
 
           <Form.Item
             label="MR 创建者"
-            name="creators"
+            name="target_creators"
             tooltip="只自动处理这些用户创建的 MR"
             rules={[{ required: true, message: '请选择至少一个用户' }]}
           >
@@ -160,28 +175,83 @@ export const AutoReviewSettingsModal = forwardRef<AutoReviewSettingsModalRef, Au
               loading={loadingUsers}
               options={availableUsers.map(user => ({ label: user, value: user }))}
               showSearch
+              filterOption={(input, option) =>
+                (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+              }
+            />
+          </Form.Item>
+
+          <Form.Item
+            label="目标项目"
+            name="target_projects"
+            tooltip="留空则处理所有项目，可输入项目ID进行筛选"
+          >
+            <Select
+              mode="tags"
+              placeholder="输入项目ID后回车添加"
+              options={[]}
+              open={false}
             />
           </Form.Item>
 
           <Form.Item
             label="检查间隔（秒）"
-            name="interval"
+            name="interval_seconds"
             tooltip="每隔多少秒检查一次新的 MR"
+            rules={[{ type: 'number', min: 10, max: 3600, message: '间隔必须在 10-3600 秒之间' }]}
           >
-            <InputNumber min={5} max={300} style={{ width: '100%' }} />
+            <InputNumber min={10} max={3600} style={{ width: '100%' }} />
+          </Form.Item>
+
+          <Divider orientation="left" plain>自动批准设置</Divider>
+
+          <Form.Item
+            label="自动批准模式"
+            name="auto_approve_mode"
+            tooltip="选择何时自动批准 MR"
+          >
+            <Select
+              options={[
+                { label: '始终批准', value: 'always' },
+                { label: '仅当总结包含关键词时批准', value: 'keyword_only' },
+                { label: '从不自动批准', value: 'never' },
+              ]}
+            />
           </Form.Item>
 
           <Form.Item
-            label="自动批准关键词"
-            name="keywords"
-            tooltip="AI 总结中包含这些关键词时才自动批准，为空时默认批准"
+            noStyle
+            shouldUpdate={(prevValues, currentValues) =>
+              prevValues.auto_approve_mode !== currentValues.auto_approve_mode
+            }
           >
-            <Select
-              mode="tags"
-              placeholder="输入关键词后回车添加"
-              options={[]}
-              open={false}
-            />
+            {({ getFieldValue }) =>
+              getFieldValue('auto_approve_mode') === 'keyword_only' ? (
+                <Form.Item
+                  label="批准关键词"
+                  name="auto_approve_keywords"
+                  tooltip="AI 总结中包含这些关键词时才自动批准"
+                >
+                  <Select
+                    mode="tags"
+                    placeholder="输入关键词后回车添加"
+                    options={[]}
+                    open={false}
+                  />
+                </Form.Item>
+              ) : null
+            }
+          </Form.Item>
+
+          <Divider orientation="left" plain>审查设置</Divider>
+
+          <Form.Item
+            label="添加为评论"
+            name="add_as_comment"
+            valuePropName="checked"
+            tooltip="将 AI 总结作为评论添加到 MR"
+          >
+            <Switch />
           </Form.Item>
 
           <Divider />
@@ -190,11 +260,14 @@ export const AutoReviewSettingsModal = forwardRef<AutoReviewSettingsModalRef, Au
             <p>启用后会自动执行以下操作：</p>
             <ol style={{ paddingLeft: 20, margin: '8px 0' }}>
               <li>每隔指定时间获取与我相关的 MR</li>
-              <li>筛选指定创建者的 MR</li>
-              <li>如果是新建的 MR，调用 AI 总结接口</li>
+              <li>筛选指定创建者（和项目）的 MR</li>
+              <li>对新的 MR 调用 AI 总结接口</li>
               <li>将 AI 总结作为评论回复到 MR</li>
-              <li>根据关键词配置自动批准：未配置关键词时默认批准，配置后需总结中包含关键词才批准</li>
+              <li>根据批准模式配置自动批准</li>
             </ol>
+            <p style={{ marginTop: 8, color: '#faad14' }}>
+              注意：自动审查在服务器后端运行，无需保持此页面打开。
+            </p>
           </div>
         </Form>
       </AntModal>

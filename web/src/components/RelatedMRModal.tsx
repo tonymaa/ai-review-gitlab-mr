@@ -41,12 +41,23 @@ import {
   WarningOutlined,
 } from '@ant-design/icons'
 import type { RelatedMR } from '../types'
-import type { AutoReviewConfig, AutoReviewSettingsModalRef } from './AutoReviewSettingsModal'
-import { getAutoReviewConfig, AutoReviewSettingsModal, getDefaultAutoReviewConfig } from './AutoReviewSettingsModal'
-import { api } from '../api/client'
+import type { AutoReviewSettingsModalRef } from './AutoReviewSettingsModal'
+import { AutoReviewSettingsModal } from './AutoReviewSettingsModal'
+import { api, type AutoReviewConfig } from '../api/client'
 import { useApp } from '../contexts/AppContext'
 
 const { Text } = Typography
+
+// 默认自动审查配置
+const getDefaultAutoReviewConfig = (): AutoReviewConfig => ({
+  enabled: false,
+  interval_seconds: 120,
+  target_creators: [],
+  target_projects: [],
+  auto_approve_keywords: [],
+  auto_approve_mode: 'always',
+  add_as_comment: true,
+})
 
 // 排序函数：优先按项目名称排序，然后按创建时间排序
 const sortMRs = (items: RelatedMR[]): RelatedMR[] => {
@@ -251,122 +262,23 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
 
   // 加载自动 Review 配置
   useEffect(() => {
-    setAutoReviewConfig(getAutoReviewConfig())
-  }, [])
-
-  // 自动 Review 后台任务
-  useEffect(() => {
-    // 只在 mode 为 'related' 时启用
-    if (mode !== 'related') return
-
-    // 如果未启用，不执行
-    if (!autoReviewConfig.enabled || !autoReviewConfig.creators.length) {
-      setAutoReviewRunning(false)
-      return
-    }
-
-    setAutoReviewRunning(true)
-
-    const intervalMs = autoReviewConfig.interval * 1000
-    let mounted = true
-    let timer: ReturnType<typeof setTimeout> | null = null
-
-    const runAutoReview = async () => {
+    const loadConfig = async () => {
       try {
-        if (!mounted) return
-
-        // 获取相关 MR
-        const relatedMRs = await api.listRelatedMergeRequests('opened')
-        if (!mounted) return
-
-        setData(sortMRs(relatedMRs))
-        cleanupViewedMRs(relatedMRs, mode)
-        cleanupApprovedMRs(relatedMRs, mode)
-        // 更新本地状态
-        setViewedMRs(getViewedMRs(mode))
-        setApprovedMRs(getApprovedMRs(mode))
-
-        // 筛选指定创建者的 MR
-        const targetMRs = relatedMRs.filter(item => {
-          const key = getMRKey(item)
-          // 已经被批准过的跳过
-          const approvedMRs = getApprovedMRs(mode)
-          if (approvedMRs[key]) return false
-          // 筛选创建者
-          return autoReviewConfig.creators.includes(item.mr.author_name)
-        })
-
-        if (targetMRs.length === 0) return
-
-        // 处理每个符合条件的 MR
-        for (const item of targetMRs) {
-          if (!mounted) break
-          if (!item.project) continue
-
-          const key = getMRKey(item)
-          try {
-            // 调用 AI 总结接口
-            let summary = ''
-            await api.summarizeChanges(
-              item.project.id.toString(),
-              item.mr.iid,
-              (chunk) => {
-                summary += chunk
-              }
-            )
-
-            if (!mounted) return
-
-            // 将 AI 总结作为评论回复
-            if (summary) {
-              await api.createMergeRequestNote(
-                item.project.id.toString(),
-                item.mr.iid,
-                { body: summary }
-              )
-            }
-
-            // 判断是否应该自动批准
-            const shouldAutoApprove = !summary || (
-              autoReviewConfig.keywords.length === 0 ||
-              autoReviewConfig.keywords.some(keyword => summary.indexOf(keyword) !== -1)
-            )
-
-            if (shouldAutoApprove) {
-              // 自动批准 MR
-              await api.approveMergeRequest(
-                item.project.id.toString(),
-                item.mr.iid
-              )
-              saveApprovedMR(key, mode)
-            }
-            // 标记为已查看和已批准
-            saveViewedMR(key, mode)
-
-            console.log(`[Auto Review] 成功处理 MR: ${item.mr.title} (${item.mr.author_name})`)
-          } catch (err) {
-            console.error(`[Auto Review] 处理 MR 失败: ${item.mr.title}`, err)
-          }
-        }
+        const config = await api.getAutoReviewConfig()
+        setAutoReviewConfig(config)
       } catch (err) {
-        console.error('[Auto Review] 获取 MR 列表失败:', err)
-      } finally {
-        // 执行完成后，再设置下一次定时器
-        if (mounted) {
-          timer = setTimeout(runAutoReview, intervalMs)
-        }
+        // 如果获取失败，使用默认配置
+        setAutoReviewConfig(getDefaultAutoReviewConfig())
       }
     }
+    loadConfig()
+  }, [])
 
-    // 首次执行
-    runAutoReview()
-
-    return () => {
-      mounted = false
-      if (timer) clearTimeout(timer)
-      setAutoReviewRunning(false)
-    }
-  }, [autoReviewConfig, mode])
+  // 自动 Review 后台任务（已禁用 - 现由后端调度器处理）
+  useEffect(() => {
+    // 前端自动审查已禁用，现在由后端调度器处理
+    setAutoReviewRunning(false)
+  }, [mode])
 
   const handleOpenMR = async (item: RelatedMR) => {
     if (!item.project) return

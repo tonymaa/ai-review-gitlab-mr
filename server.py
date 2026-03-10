@@ -46,8 +46,18 @@ def main():
         action="store_true",
         help="启用自动重载（开发模式）"
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="启用 DEBUG 级别日志"
+    )
 
     args = parser.parse_args()
+
+    # 如果启用 debug 模式，更新日志级别
+    if args.debug:
+        logging.getLogger().setLevel(logging.DEBUG)
+        logger.info("DEBUG 模式已启用")
 
     logger.info("启动 GitLab AI Review Web 服务器...")
     logger.info(f"访问地址: http://{args.host}:{args.port}")

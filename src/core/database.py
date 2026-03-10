@@ -60,6 +60,7 @@ class User(Base):
     # 关联关系
     gitlab_config = relationship("GitLabConfig", back_populates="user", uselist=False, cascade="all, delete-orphan")
     ai_config = relationship("AIConfig", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    auto_review_config = relationship("AutoReviewConfig", back_populates="user", uselist=False, cascade="all, delete-orphan")
 
     def set_password(self, password: str):
         """设置密码（哈希存储）"""
@@ -118,6 +119,37 @@ class AIConfig(Base):
 
     # 关联关系
     user = relationship("User", back_populates="ai_config")
+
+
+class AutoReviewConfig(Base):
+    """自动审查配置模型"""
+
+    __tablename__ = "auto_review_configs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True, index=True)
+
+    # 基础配置
+    enabled = Column(Boolean, nullable=False, default=False)
+    interval_seconds = Column(Integer, nullable=False, default=120)
+
+    # 筛选条件（JSON格式存储）
+    target_creators = Column(Text, nullable=True)  # JSON: ["creator1", "creator2"]
+    target_projects = Column(Text, nullable=True)  # JSON: ["project1", "project2"]
+
+    # 自动批准条件（JSON格式存储）
+    auto_approve_keywords = Column(Text, nullable=True)  # JSON: ["keyword1", "keyword2"]
+    auto_approve_mode = Column(String(20), nullable=False, default="always")  # always, keyword_only, never
+
+    # 审查配置
+    add_as_comment = Column(Boolean, nullable=False, default=True)  # 是否将总结添加为MR评论
+
+    # 时间戳
+    created_at = Column(DateTime, default=now_utc)
+    updated_at = Column(DateTime, default=now_utc, onupdate=now_utc)
+
+    # 关联关系
+    user = relationship("User", back_populates="auto_review_config")
 
 
 class MergeRequest(Base):
@@ -293,6 +325,14 @@ class DatabaseManager:
                     logger.info("已添加 summary_prompt 列到 ai_configs 表")
                 except Exception as e:
                     logger.warning(f"添加 summary_prompt 列失败: {e}")
+
+        # 检查并创建 auto_review_configs 表（如果不存在）
+        if 'auto_review_configs' not in inspector.get_table_names():
+            try:
+                AutoReviewConfig.__table__.create(self.engine, checkfirst=True)
+                logger.info("已创建 auto_review_configs 表")
+            except Exception as e:
+                logger.warning(f"创建 auto_review_configs 表失败: {e}")
 
     @contextmanager
     def get_session(self) -> Session:
@@ -744,3 +784,209 @@ class DatabaseManager:
                 .delete()
             )
             return deleted > 0
+
+    # ==================== Auto Review 配置相关操作 ====================
+
+    def upsert_auto_review_config(
+        self,
+        user_id: int,
+        enabled: bool = False,
+        interval_seconds: int = 120,
+        target_creators: Optional[List[str]] = None,
+        target_projects: Optional[List[str]] = None,
+        auto_approve_keywords: Optional[List[str]] = None,
+        auto_approve_mode: str = "always",
+        add_as_comment: bool = True,
+    ) -> AutoReviewConfig:
+        """创建或更新自动审查配置"""
+        with self.get_session() as session:
+            # 查找是否已存在
+            existing = (
+                session.query(AutoReviewConfig)
+                .filter(AutoReviewConfig.user_id == user_id)
+                .first()
+            )
+
+            # 将列表转换为 JSON
+            creators_json = json.dumps(target_creators) if target_creators else None
+            projects_json = json.dumps(target_projects) if target_projects else None
+            keywords_json = json.dumps(auto_approve_keywords) if auto_approve_keywords else None
+
+            if existing:
+                # 更新现有配置
+                existing.enabled = enabled
+                existing.interval_seconds = interval_seconds
+                existing.target_creators = creators_json
+                existing.target_projects = projects_json
+                existing.auto_approve_keywords = keywords_json
+                existing.auto_approve_mode = auto_approve_mode
+                existing.add_as_comment = add_as_comment
+                existing.updated_at = now_utc()
+                session.merge(existing)
+                session.flush()
+                session.refresh(existing)
+                return existing
+            else:
+                # 创建新配置
+                config = AutoReviewConfig(
+                    user_id=user_id,
+                    enabled=enabled,
+                    interval_seconds=interval_seconds,
+                    target_creators=creators_json,
+                    target_projects=projects_json,
+                    auto_approve_keywords=keywords_json,
+                    auto_approve_mode=auto_approve_mode,
+                    add_as_comment=add_as_comment,
+                )
+                session.add(config)
+                session.flush()
+                session.refresh(config)
+                return config
+
+    def get_auto_review_config(self, user_id: int) -> Optional[dict]:
+        """获取用户的自动审查配置（字典格式）"""
+        with self.get_session() as session:
+            config = (
+                session.query(AutoReviewConfig)
+                .filter(AutoReviewConfig.user_id == user_id)
+                .first()
+            )
+            if config is None:
+                return None
+
+            # 解析 JSON 字段
+            target_creators = []
+            if config.target_creators:
+                try:
+                    target_creators = json.loads(config.target_creators)
+                except:
+                    pass
+
+            target_projects = []
+            if config.target_projects:
+                try:
+                    target_projects = json.loads(config.target_projects)
+                except:
+                    pass
+
+            auto_approve_keywords = []
+            if config.auto_approve_keywords:
+                try:
+                    auto_approve_keywords = json.loads(config.auto_approve_keywords)
+                except:
+                    pass
+
+            return {
+                "id": config.id,
+                "user_id": config.user_id,
+                "enabled": config.enabled,
+                "interval_seconds": config.interval_seconds,
+                "target_creators": target_creators,
+                "target_projects": target_projects,
+                "auto_approve_keywords": auto_approve_keywords,
+                "auto_approve_mode": config.auto_approve_mode,
+                "add_as_comment": config.add_as_comment,
+                "created_at": config.created_at.isoformat() if config.created_at else None,
+                "updated_at": config.updated_at.isoformat() if config.updated_at else None,
+            }
+
+    def delete_auto_review_config(self, user_id: int) -> bool:
+        """删除用户的自动审查配置"""
+        with self.get_session() as session:
+            deleted = (
+                session.query(AutoReviewConfig)
+                .filter(AutoReviewConfig.user_id == user_id)
+                .delete()
+            )
+            return deleted > 0
+
+    def list_enabled_auto_review_configs(self) -> List[dict]:
+        """列出所有启用的自动审查配置（用于调度器启动）"""
+        with self.get_session() as session:
+            configs = (
+                session.query(AutoReviewConfig)
+                .filter(AutoReviewConfig.enabled == True)
+                .all()
+            )
+
+            result = []
+            for config in configs:
+                result.append({
+                    "user_id": config.user_id,
+                    "interval_seconds": config.interval_seconds,
+                })
+            return result
+
+    # ==================== Auto Review 处理记录相关操作 ====================
+
+    def upsert_processed_mr(
+        self,
+        user_id: int,
+        project_id: int,
+        mr_iid: int,
+        summary: Optional[str] = None,
+    ) -> None:
+        """记录已处理的 MR"""
+        with self.get_session() as session:
+            existing = (
+                session.query(ProcessedMR)
+                .filter(
+                    ProcessedMR.user_id == user_id,
+                    ProcessedMR.project_id == project_id,
+                    ProcessedMR.mr_iid == mr_iid,
+                )
+                .first()
+            )
+
+            if existing:
+                existing.processed_at = now_utc()
+                existing.summary = summary
+                session.merge(existing)
+            else:
+                record = ProcessedMR(
+                    user_id=user_id,
+                    project_id=project_id,
+                    mr_iid=mr_iid,
+                    summary=summary,
+                )
+                session.add(record)
+
+    def is_mr_processed(self, user_id: int, project_id: int, mr_iid: int) -> bool:
+        """检查 MR 是否已处理"""
+        with self.get_session() as session:
+            existing = (
+                session.query(ProcessedMR)
+                .filter(
+                    ProcessedMR.user_id == user_id,
+                    ProcessedMR.project_id == project_id,
+                    ProcessedMR.mr_iid == mr_iid,
+                )
+                .first()
+            )
+            return existing is not None
+
+    def get_processed_mr_count(self, user_id: int) -> int:
+        """获取用户已处理的 MR 数量"""
+        with self.get_session() as session:
+            count = (
+                session.query(ProcessedMR)
+                .filter(ProcessedMR.user_id == user_id)
+                .count()
+            )
+            return count
+
+
+class ProcessedMR(Base):
+    """已处理的 MR 记录"""
+    __tablename__ = "processed_mrs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    project_id = Column(Integer, nullable=False, index=True)
+    mr_iid = Column(Integer, nullable=False, index=True)
+    summary = Column(Text, nullable=True)  # AI 总结内容
+    processed_at = Column(DateTime, default=now_utc, index=True)
+
+    __table_args__ = (
+        Index("idx_user_project_mr", "user_id", "project_id", "mr_iid", unique=True),
+    )
