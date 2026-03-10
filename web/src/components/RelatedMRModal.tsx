@@ -269,6 +269,7 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
 
     const intervalMs = autoReviewConfig.interval * 1000
     let mounted = true
+    let timer: ReturnType<typeof setTimeout> | null = null
 
     const runAutoReview = async () => {
       try {
@@ -276,6 +277,8 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
 
         // 获取相关 MR
         const relatedMRs = await api.listRelatedMergeRequests('opened')
+        if (!mounted) return
+
         setData(sortMRs(relatedMRs))
         cleanupViewedMRs(relatedMRs, mode)
         cleanupApprovedMRs(relatedMRs, mode)
@@ -312,6 +315,8 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
               }
             )
 
+            if (!mounted) return
+
             // 将 AI 总结作为评论回复
             if (summary) {
               await api.createMergeRequestNote(
@@ -345,18 +350,20 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
         }
       } catch (err) {
         console.error('[Auto Review] 获取 MR 列表失败:', err)
+      } finally {
+        // 执行完成后，再设置下一次定时器
+        if (mounted) {
+          timer = setTimeout(runAutoReview, intervalMs)
+        }
       }
     }
 
     // 首次执行
     runAutoReview()
 
-    // 设置定时器
-    const timer = setInterval(runAutoReview, intervalMs)
-
     return () => {
       mounted = false
-      clearInterval(timer)
+      if (timer) clearTimeout(timer)
       setAutoReviewRunning(false)
     }
   }, [autoReviewConfig, mode])
