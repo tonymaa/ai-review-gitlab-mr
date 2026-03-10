@@ -280,8 +280,14 @@ class AutoReviewScheduler:
                 # 记录已处理
                 mr_iid = getattr(mr, "iid", None)
                 mr_project_id = getattr(mr, "project_id", None)
+                mr_web_url = getattr(mr, "web_url", None)
+                mr_title = getattr(mr, "title", None)
                 if mr_iid and mr_project_id:
-                    self.db.upsert_processed_mr(user_id, mr_project_id, mr_iid)
+                    self.db.upsert_processed_mr(
+                        user_id, mr_project_id, mr_iid,
+                        web_url=mr_web_url,
+                        title=mr_title
+                    )
             except Exception as e:
                 logger.error(f"处理 MR 失败: {e}")
 

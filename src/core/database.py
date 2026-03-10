@@ -3,8 +3,10 @@
 import json
 import logging
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 from pathlib import Path
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Dict
 
 from sqlalchemy import (
     create_engine,
@@ -16,6 +18,8 @@ from sqlalchemy import (
     Boolean,
     ForeignKey,
     Index,
+    and_,
+    tuple_,
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship, Session
@@ -925,6 +929,8 @@ class DatabaseManager:
         project_id: int,
         mr_iid: int,
         summary: Optional[str] = None,
+        web_url: Optional[str] = None,
+        title: Optional[str] = None,
     ) -> None:
         """记录已处理的 MR"""
         with self.get_session() as session:
@@ -941,6 +947,8 @@ class DatabaseManager:
             if existing:
                 existing.processed_at = now_utc()
                 existing.summary = summary
+                existing.web_url = web_url
+                existing.title = title
                 session.merge(existing)
             else:
                 record = ProcessedMR(
@@ -948,6 +956,8 @@ class DatabaseManager:
                     project_id=project_id,
                     mr_iid=mr_iid,
                     summary=summary,
+                    web_url=web_url,
+                    title=title,
                 )
                 session.add(record)
 
@@ -975,6 +985,57 @@ class DatabaseManager:
             )
             return count
 
+    def list_processed_mrs(self, user_id: int, limit: int = 100) -> List[Dict[str, Any]]:
+        """获取用户已处理的 MR 列表"""
+        with self.get_session() as session:
+            processed_records = (
+                session.query(ProcessedMR)
+                .filter(ProcessedMR.user_id == user_id)
+                .order_by(ProcessedMR.processed_at.desc())
+                .limit(limit)
+                .all()
+            )
+
+            logger.info(f"用户 {user_id} 有 {len(processed_records)} 条已处理 MR 记录")
+
+            result = []
+            for record in processed_records:
+                result.append({
+                    "id": record.id,
+                    "project_id": record.project_id,
+                    "mr_iid": record.mr_iid,
+                    "summary": record.summary,
+                    "processed_at": record.processed_at.isoformat() if record.processed_at else None,
+                    "web_url": record.web_url,
+                    "title": record.title,
+                })
+            return result
+
+    def delete_processed_mr(self, user_id: int, record_id: int) -> bool:
+        """删除指定的已处理 MR 记录"""
+        with self.get_session() as session:
+            deleted = (
+                session.query(ProcessedMR)
+                .filter(
+                    ProcessedMR.id == record_id,
+                    ProcessedMR.user_id == user_id,
+                )
+                .delete()
+            )
+            session.commit()
+            return deleted > 0
+
+    def clear_processed_mrs(self, user_id: int) -> int:
+        """清空用户的所有已处理 MR 记录"""
+        with self.get_session() as session:
+            deleted = (
+                session.query(ProcessedMR)
+                .filter(ProcessedMR.user_id == user_id)
+                .delete()
+            )
+            session.commit()
+            return deleted
+
 
 class ProcessedMR(Base):
     """已处理的 MR 记录"""
@@ -986,6 +1047,8 @@ class ProcessedMR(Base):
     mr_iid = Column(Integer, nullable=False, index=True)
     summary = Column(Text, nullable=True)  # AI 总结内容
     processed_at = Column(DateTime, default=now_utc, index=True)
+    web_url = Column(String(500), nullable=True)  # MR 在 GitLab 中的链接
+    title = Column(String(500), nullable=True)  # MR 标题
 
     __table_args__ = (
         Index("idx_user_project_mr", "user_id", "project_id", "mr_iid", unique=True),

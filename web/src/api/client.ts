@@ -458,6 +458,38 @@ class APIClient {
     const response = await this.client.post('/auto-review/run-now');
     return response.data;
   }
+
+  /**
+   * 获取已处理的 MR 历史记录
+   */
+  async getProcessedHistory(limit: number = 100): Promise<{
+    id: number;
+    project_id: number;
+    mr_iid: number;
+    summary: string | null;
+    processed_at: string;
+  }[]> {
+    const response = await this.client.get('/auto-review/history', {
+      params: { limit },
+    });
+    return response.data;
+  }
+
+  /**
+   * 删除指定的已处理 MR 记录
+   */
+  async deleteProcessedHistoryItem(recordId: number): Promise<{ status: string; message: string }> {
+    const response = await this.client.delete(`/auto-review/history/${recordId}`);
+    return response.data;
+  }
+
+  /**
+   * 清空所有已处理的 MR 历史记录
+   */
+  async clearProcessedHistory(): Promise<{ status: string; message: string }> {
+    const response = await this.client.delete('/auto-review/history');
+    return response.data;
+  }
 }
 
 // ==================== 类型定义 ====================

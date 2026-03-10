@@ -3,8 +3,10 @@
  */
 
 import { useState, useImperativeHandle, forwardRef } from 'react'
-import { Modal as AntModal, Form, Switch, Select, InputNumber, Divider, message, Space, Tag } from 'antd'
+import { Modal as AntModal, Form, Switch, Select, InputNumber, Divider, message, Space, Tag, Button } from 'antd'
+import { HistoryOutlined } from '@ant-design/icons'
 import { api, type AutoReviewConfig } from '../api/client'
+import ProcessedMRHistoryModal from './ProcessedMRHistoryModal'
 
 // ==================== 类型定义 ====================
 
@@ -32,6 +34,7 @@ interface AutoReviewSettingsModalProps {
 export const AutoReviewSettingsModal = forwardRef<AutoReviewSettingsModalRef, AutoReviewSettingsModalProps>(
   ({ onConfigChange }, ref) => {
     const [open, setOpen] = useState(false)
+    const [historyModalOpen, setHistoryModalOpen] = useState(false)
     const [config, setConfig] = useState<AutoReviewConfig>(getDefaultAutoReviewConfig())
     const [availableUsers, setAvailableUsers] = useState<string[]>([])
     const [loadingUsers, setLoadingUsers] = useState(false)
@@ -120,17 +123,30 @@ export const AutoReviewSettingsModal = forwardRef<AutoReviewSettingsModalRef, Au
     }
 
     return (
-      <AntModal
-        title="自动 Review 并批准设置"
-        open={open}
-        onCancel={handleCancel}
-        onOk={handleOk}
-        okText="保存"
-        cancelText="取消"
-        width={550}
-        confirmLoading={loading}
-        maskClosable={false}
-      >
+      <>
+        <AntModal
+          title={
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginRight: '30px' }}>
+              <span>自动 Review 并批准设置</span>
+              <Button
+                type="link"
+                size="small"
+                icon={<HistoryOutlined />}
+                onClick={() => setHistoryModalOpen(true)}
+              >
+                历史记录
+              </Button>
+            </div>
+          }
+          open={open}
+          onCancel={handleCancel}
+          onOk={handleOk}
+          okText="保存"
+          cancelText="取消"
+          width={550}
+          confirmLoading={loading}
+          maskClosable={false}
+        >
         <Form
           form={form}
           layout="vertical"
@@ -138,16 +154,16 @@ export const AutoReviewSettingsModal = forwardRef<AutoReviewSettingsModalRef, Au
         >
           {/* 状态显示 */}
           {(config.is_running || config.last_run_at || config.next_run_at) && (
-            <div style={{ marginBottom: 16, padding: 12, background: '#f5f5f5', borderRadius: 4 }}>
+            <div style={{ marginBottom: 16, padding: 12, background: '#5f5f5f', borderRadius: 4 }}>
               <Space size={4} style={{ width: '100%' }} vertical>
                 {config.is_running && <Tag color="green">运行中</Tag>}
                 {config.last_run_at && (
-                  <div style={{ fontSize: 12, color: '#666' }}>
+                  <div style={{ fontSize: 12, color: '#cecece' }}>
                     上次运行: {new Date(config.last_run_at).toLocaleString('zh-CN')}
                   </div>
                 )}
                 {config.next_run_at && (
-                  <div style={{ fontSize: 12, color: '#666' }}>
+                  <div style={{ fontSize: 12, color: '#cecece' }}>
                     下次运行: {new Date(config.next_run_at).toLocaleString('zh-CN')}
                   </div>
                 )}
@@ -271,6 +287,12 @@ export const AutoReviewSettingsModal = forwardRef<AutoReviewSettingsModalRef, Au
           </div>
         </Form>
       </AntModal>
-    )
-  }
+
+      <ProcessedMRHistoryModal
+        open={historyModalOpen}
+        onClose={() => setHistoryModalOpen(false)}
+      />
+    </>
+  )
+}
 )

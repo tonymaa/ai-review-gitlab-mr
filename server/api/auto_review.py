@@ -248,3 +248,50 @@ async def run_auto_review_now(
     background_tasks.add_task(scheduler.trigger_single_run, user_id)
 
     return {"status": "ok", "message": "已触发自动审查任务"}
+
+
+# ==================== 已处理 MR 历史记录 ====================
+
+class ProcessedMRItem(BaseModel):
+    """已处理的 MR 记录项"""
+    id: int
+    project_id: int
+    mr_iid: int
+    summary: Optional[str] = None
+    processed_at: str
+    web_url: Optional[str] = None
+    title: Optional[str] = None
+
+
+@router.get("/history", response_model=List[ProcessedMRItem])
+async def get_processed_history(
+    limit: int = 100,
+    user_id: int = Depends(get_current_user_id),
+    db: DatabaseManager = Depends(get_db),
+):
+    """获取已处理的 MR 历史记录"""
+    records = db.list_processed_mrs(user_id, limit)
+    return records
+
+
+@router.delete("/history/{record_id}")
+async def delete_processed_history_item(
+    record_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: DatabaseManager = Depends(get_db),
+):
+    """删除指定的已处理 MR 记录"""
+    deleted = db.delete_processed_mr(user_id, record_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="记录不存在")
+    return {"status": "ok", "message": "已删除"}
+
+
+@router.delete("/history")
+async def clear_processed_history(
+    user_id: int = Depends(get_current_user_id),
+    db: DatabaseManager = Depends(get_db),
+):
+    """清空所有已处理的 MR 历史记录"""
+    count = db.clear_processed_mrs(user_id)
+    return {"status": "ok", "message": f"已删除 {count} 条记录"}
