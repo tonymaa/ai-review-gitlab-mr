@@ -17,6 +17,8 @@ import type {
   CommentRequest,
   User,
   Discussion,
+  AIProvider,
+  AIProvidersResponse,
 } from '../types';
 
 // Token 管理 key
@@ -153,12 +155,67 @@ class APIClient {
   // ==================== Config ====================
 
   async getConfig(): Promise<AppConfig> {
-    const response = await this.client.get('/config/config');
+    const response = await this.client.get('/config');
     return response.data;
   }
 
   async updateConfig(config: Partial<AppConfig>): Promise<{ status: string; message: string }> {
-    const response = await this.client.post('/config/config', config);
+    const response = await this.client.post('/config', config);
+    return response.data;
+  }
+
+  // ==================== AI Providers ====================
+
+  async listAIProviders(): Promise<AIProvidersResponse> {
+    const response = await this.client.get('/config/providers');
+    return response.data;
+  }
+
+  async createAIProvider(provider: {
+    name: string;
+    provider_type: 'openai' | 'ollama';
+    openai?: {
+      api_key?: string;
+      base_url?: string;
+      model?: string;
+      temperature?: number;
+      max_tokens?: number;
+    };
+    ollama?: {
+      base_url?: string;
+      model?: string;
+    };
+  }): Promise<{ status: string; message: string; provider: AIProvider }> {
+    const response = await this.client.post('/config/providers', provider);
+    return response.data;
+  }
+
+  async updateAIProvider(providerId: number, provider: {
+    name?: string;
+    provider_type?: 'openai' | 'ollama';
+    openai?: {
+      api_key?: string;
+      base_url?: string;
+      model?: string;
+      temperature?: number;
+      max_tokens?: number;
+    };
+    ollama?: {
+      base_url?: string;
+      model?: string;
+    };
+  }): Promise<{ status: string; message: string; provider: AIProvider }> {
+    const response = await this.client.put(`/config/providers/${providerId}`, provider);
+    return response.data;
+  }
+
+  async deleteAIProvider(providerId: number): Promise<{ status: string; message: string }> {
+    const response = await this.client.delete(`/config/providers/${providerId}`);
+    return response.data;
+  }
+
+  async activateAIProvider(providerId: number): Promise<{ status: string; message: string }> {
+    const response = await this.client.post(`/config/providers/${providerId}/activate`);
     return response.data;
   }
 

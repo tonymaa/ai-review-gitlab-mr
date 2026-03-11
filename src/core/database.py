@@ -64,6 +64,7 @@ class User(Base):
     # 关联关系
     gitlab_config = relationship("GitLabConfig", back_populates="user", uselist=False, cascade="all, delete-orphan")
     ai_config = relationship("AIConfig", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    ai_providers = relationship("AIProvider", back_populates="user", cascade="all, delete-orphan")
     auto_review_config = relationship("AutoReviewConfig", back_populates="user", uselist=False, cascade="all, delete-orphan")
 
     def set_password(self, password: str):
@@ -92,14 +93,15 @@ class GitLabConfig(Base):
     user = relationship("User", back_populates="gitlab_config")
 
 
-class AIConfig(Base):
-    """AI 配置模型"""
+class AIProvider(Base):
+    """AI Provider 配置模型 - 支持多个 provider"""
 
-    __tablename__ = "ai_configs"
+    __tablename__ = "ai_providers"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True, index=True)
-    provider = Column(String(50), nullable=False, default="openai")
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    name = Column(String(100), nullable=False)  # 用户自定义名称
+    provider_type = Column(String(50), nullable=False)  # openai, ollama
 
     # OpenAI 配置
     openai_api_key = Column(String(500), nullable=True)
@@ -112,6 +114,24 @@ class AIConfig(Base):
     ollama_base_url = Column(String(500), nullable=False, default="http://localhost:11434")
     ollama_model = Column(String(100), nullable=False, default="codellama")
 
+    created_at = Column(DateTime, default=now_utc)
+    updated_at = Column(DateTime, default=now_utc, onupdate=now_utc)
+
+    # 关联关系
+    user = relationship("User", back_populates="ai_providers")
+
+
+class AIConfig(Base):
+    """AI 配置模型 - 全局设置"""
+
+    __tablename__ = "ai_configs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True, index=True)
+
+    # 当前激活的 provider
+    active_provider_id = Column(Integer, ForeignKey("ai_providers.id"), nullable=True)
+
     # 审查规则 (JSON 格式存储)
     review_rules = Column(Text, nullable=True)
 
@@ -123,6 +143,7 @@ class AIConfig(Base):
 
     # 关联关系
     user = relationship("User", back_populates="ai_config")
+    active_provider = relationship("AIProvider", foreign_keys=[active_provider_id])
 
 
 class AutoReviewConfig(Base):
@@ -318,6 +339,14 @@ class DatabaseManager:
         from sqlalchemy import inspect, text
         inspector = inspect(self.engine)
 
+        # 检查并创建 ai_providers 表（如果不存在）
+        if 'ai_providers' not in inspector.get_table_names():
+            try:
+                AIProvider.__table__.create(self.engine, checkfirst=True)
+                logger.info("已创建 ai_providers 表")
+            except Exception as e:
+                logger.warning(f"创建 ai_providers 表失败: {e}")
+
         # 检查 ai_configs 表是否存在 summary_prompt 列
         if 'ai_configs' in inspector.get_table_names():
             columns = [col['name'] for col in inspector.get_columns('ai_configs')]
@@ -330,6 +359,19 @@ class DatabaseManager:
                 except Exception as e:
                     logger.warning(f"添加 summary_prompt 列失败: {e}")
 
+            # 添加 active_provider_id 列
+            if 'active_provider_id' not in columns:
+                try:
+                    with self.engine.connect() as conn:
+                        conn.execute(text("ALTER TABLE ai_configs ADD COLUMN active_provider_id INTEGER REFERENCES ai_providers(id)"))
+                        conn.commit()
+                    logger.info("已添加 active_provider_id 列到 ai_configs 表")
+                except Exception as e:
+                    logger.warning(f"添加 active_provider_id 列失败: {e}")
+
+            # 迁移旧数据：将现有的 provider 配置迁移到 ai_providers 表
+            self._migrate_legacy_ai_config()
+
         # 检查并创建 auto_review_configs 表（如果不存在）
         if 'auto_review_configs' not in inspector.get_table_names():
             try:
@@ -337,6 +379,98 @@ class DatabaseManager:
                 logger.info("已创建 auto_review_configs 表")
             except Exception as e:
                 logger.warning(f"创建 auto_review_configs 表失败: {e}")
+
+    def _migrate_legacy_ai_config(self):
+        """迁移旧的 AI 配置到新的 ai_providers 表"""
+        from sqlalchemy import inspect, text
+        inspector = inspect(self.engine)
+
+        # 检查 ai_configs 表是否还有旧的列
+        if 'ai_configs' not in inspector.get_table_names():
+            return
+
+        columns = [col['name'] for col in inspector.get_columns('ai_configs')]
+        if 'provider' not in columns:
+            return  # 已经迁移完成
+
+        try:
+            with self.engine.connect() as conn:
+                # 查找需要迁移的配置
+                result = conn.execute(text("""
+                    SELECT id, user_id, provider,
+                           openai_api_key, openai_base_url, openai_model, openai_temperature, openai_max_tokens,
+                           ollama_base_url, ollama_model
+                    FROM ai_configs
+                    WHERE provider IS NOT NULL AND provider != ''
+                """))
+
+                for row in result:
+                    ai_config_id, user_id, provider_type = row[0], row[1], row[2]
+                    openai_api_key = row[3]
+                    openai_base_url = row[4]
+                    openai_model = row[5] or 'gpt-4'
+                    openai_temperature = row[6] or 30
+                    openai_max_tokens = row[7] or 4000
+                    ollama_base_url = row[8] or 'http://localhost:11434'
+                    ollama_model = row[9] or 'codellama'
+
+                    # 检查是否已经迁移过
+                    existing = conn.execute(text("""
+                        SELECT id FROM ai_providers WHERE user_id = :user_id
+                    """), {"user_id": user_id}).fetchone()
+
+                    if existing:
+                        continue
+
+                    # 创建 AIProvider 记录
+                    provider_name = f"Default {provider_type.capitalize()}"
+
+                    conn.execute(text("""
+                        INSERT INTO ai_providers (user_id, name, provider_type,
+                            openai_api_key, openai_base_url, openai_model, openai_temperature, openai_max_tokens,
+                            ollama_base_url, ollama_model, created_at, updated_at)
+                        VALUES (:user_id, :name, :provider_type,
+                            :openai_api_key, :openai_base_url, :openai_model, :openai_temperature, :openai_max_tokens,
+                            :ollama_base_url, :ollama_model, datetime('now'), datetime('now'))
+                    """), {
+                        "user_id": user_id,
+                        "name": provider_name,
+                        "provider_type": provider_type,
+                        "openai_api_key": openai_api_key,
+                        "openai_base_url": openai_base_url,
+                        "openai_model": openai_model,
+                        "openai_temperature": openai_temperature,
+                        "openai_max_tokens": openai_max_tokens,
+                        "ollama_base_url": ollama_base_url,
+                        "ollama_model": ollama_model,
+                    })
+
+                    # 获取新创建的 provider id
+                    provider_row = conn.execute(text("""
+                        SELECT id FROM ai_providers WHERE user_id = :user_id ORDER BY id DESC LIMIT 1
+                    """), {"user_id": user_id}).fetchone()
+
+                    if provider_row:
+                        # 更新 ai_configs 的 active_provider_id
+                        conn.execute(text("""
+                            UPDATE ai_configs SET active_provider_id = :provider_id WHERE id = :ai_config_id
+                        """), {"provider_id": provider_row[0], "ai_config_id": ai_config_id})
+
+                conn.commit()
+                logger.info("已迁移旧的 AI 配置到 ai_providers 表")
+
+                # 删除旧列（SQLite 3.35.0+ 支持）
+                old_columns = ['provider', 'openai_api_key', 'openai_base_url', 'openai_model',
+                               'openai_temperature', 'openai_max_tokens', 'ollama_base_url', 'ollama_model']
+                for col in old_columns:
+                    try:
+                        conn.execute(text(f"ALTER TABLE ai_configs DROP COLUMN {col}"))
+                        logger.info(f"已删除 ai_configs 表的 {col} 列")
+                    except Exception as col_err:
+                        logger.debug(f"删除列 {col} 失败（可能不支持或列不存在）: {col_err}")
+                conn.commit()
+        except Exception as e:
+            logger.warning(f"迁移 AI 配置失败: {e}")
 
     @contextmanager
     def get_session(self) -> Session:
@@ -679,18 +813,11 @@ class DatabaseManager:
     def upsert_ai_config(
         self,
         user_id: int,
-        provider: str,
-        openai_api_key: Optional[str] = None,
-        openai_base_url: Optional[str] = None,
-        openai_model: str = "gpt-4",
-        openai_temperature: float = 0.3,
-        openai_max_tokens: int = 4000,
-        ollama_base_url: str = "http://localhost:11434",
-        ollama_model: str = "codellama",
+        active_provider_id: Optional[int] = None,
         review_rules: Optional[List[str]] = None,
         summary_prompt: Optional[str] = None,
     ) -> AIConfig:
-        """创建或更新 AI 配置"""
+        """创建或更新 AI 全局配置（不含 provider 配置）"""
         with self.get_session() as session:
             # 查找是否已存在
             existing = (
@@ -699,22 +826,13 @@ class DatabaseManager:
                 .first()
             )
 
-            # 将温度转换为整数存储（乘以100）
-            temp_int = int(openai_temperature * 100)
-
             # 将审查规则转换为 JSON
             rules_json = json.dumps(review_rules) if review_rules else None
 
             if existing:
                 # 更新现有配置
-                existing.provider = provider
-                existing.openai_api_key = openai_api_key
-                existing.openai_base_url = openai_base_url
-                existing.openai_model = openai_model
-                existing.openai_temperature = temp_int
-                existing.openai_max_tokens = openai_max_tokens
-                existing.ollama_base_url = ollama_base_url
-                existing.ollama_model = ollama_model
+                if active_provider_id is not None:
+                    existing.active_provider_id = active_provider_id
                 existing.review_rules = rules_json
                 if summary_prompt is not None:
                     existing.summary_prompt = summary_prompt
@@ -727,14 +845,7 @@ class DatabaseManager:
                 # 创建新配置
                 config = AIConfig(
                     user_id=user_id,
-                    provider=provider,
-                    openai_api_key=openai_api_key,
-                    openai_base_url=openai_base_url,
-                    openai_model=openai_model,
-                    openai_temperature=temp_int,
-                    openai_max_tokens=openai_max_tokens,
-                    ollama_base_url=ollama_base_url,
-                    ollama_model=ollama_model,
+                    active_provider_id=active_provider_id,
                     review_rules=rules_json,
                     summary_prompt=summary_prompt,
                 )
@@ -765,14 +876,7 @@ class DatabaseManager:
             return {
                 "id": config.id,
                 "user_id": config.user_id,
-                "provider": config.provider,
-                "openai_api_key": config.openai_api_key,
-                "openai_base_url": config.openai_base_url,
-                "openai_model": config.openai_model,
-                "openai_temperature": config.openai_temperature / 100.0,  # 转换回浮点数
-                "openai_max_tokens": config.openai_max_tokens,
-                "ollama_base_url": config.ollama_base_url,
-                "ollama_model": config.ollama_model,
+                "active_provider_id": config.active_provider_id,
                 "review_rules": review_rules or [],
                 "summary_prompt": config.summary_prompt,
                 "created_at": config.created_at.isoformat() if config.created_at else None,
@@ -788,6 +892,242 @@ class DatabaseManager:
                 .delete()
             )
             return deleted > 0
+
+    # ==================== AI Provider 相关操作 ====================
+
+    def create_ai_provider(
+        self,
+        user_id: int,
+        name: str,
+        provider_type: str,
+        openai_api_key: Optional[str] = None,
+        openai_base_url: Optional[str] = None,
+        openai_model: str = "gpt-4",
+        openai_temperature: float = 0.3,
+        openai_max_tokens: int = 4000,
+        ollama_base_url: str = "http://localhost:11434",
+        ollama_model: str = "codellama",
+    ) -> int:
+        """创建新的 AI Provider，返回 provider ID"""
+        with self.get_session() as session:
+            # 将温度转换为整数存储（乘以100）
+            temp_int = int(openai_temperature * 100)
+
+            provider = AIProvider(
+                user_id=user_id,
+                name=name,
+                provider_type=provider_type,
+                openai_api_key=openai_api_key,
+                openai_base_url=openai_base_url,
+                openai_model=openai_model,
+                openai_temperature=temp_int,
+                openai_max_tokens=openai_max_tokens,
+                ollama_base_url=ollama_base_url,
+                ollama_model=ollama_model,
+            )
+            session.add(provider)
+            session.flush()
+            session.refresh(provider)
+            # 在 session 内获取 ID
+            provider_id = provider.id
+            return provider_id
+
+    def get_ai_provider(self, provider_id: int, user_id: int) -> Optional[dict]:
+        """获取指定的 AI Provider"""
+        with self.get_session() as session:
+            provider = (
+                session.query(AIProvider)
+                .filter(AIProvider.id == provider_id, AIProvider.user_id == user_id)
+                .first()
+            )
+            if provider is None:
+                return None
+
+            return {
+                "id": provider.id,
+                "user_id": provider.user_id,
+                "name": provider.name,
+                "provider_type": provider.provider_type,
+                "openai_api_key": provider.openai_api_key,
+                "openai_base_url": provider.openai_base_url,
+                "openai_model": provider.openai_model,
+                "openai_temperature": provider.openai_temperature / 100.0,
+                "openai_max_tokens": provider.openai_max_tokens,
+                "ollama_base_url": provider.ollama_base_url,
+                "ollama_model": provider.ollama_model,
+                "created_at": provider.created_at.isoformat() if provider.created_at else None,
+                "updated_at": provider.updated_at.isoformat() if provider.updated_at else None,
+            }
+
+    def list_ai_providers(self, user_id: int) -> List[dict]:
+        """获取用户的所有 AI Providers"""
+        with self.get_session() as session:
+            providers = (
+                session.query(AIProvider)
+                .filter(AIProvider.user_id == user_id)
+                .order_by(AIProvider.created_at.asc())
+                .all()
+            )
+
+            return [
+                {
+                    "id": p.id,
+                    "user_id": p.user_id,
+                    "name": p.name,
+                    "provider_type": p.provider_type,
+                    "openai_api_key": p.openai_api_key,
+                    "openai_base_url": p.openai_base_url,
+                    "openai_model": p.openai_model,
+                    "openai_temperature": p.openai_temperature / 100.0,
+                    "openai_max_tokens": p.openai_max_tokens,
+                    "ollama_base_url": p.ollama_base_url,
+                    "ollama_model": p.ollama_model,
+                    "created_at": p.created_at.isoformat() if p.created_at else None,
+                    "updated_at": p.updated_at.isoformat() if p.updated_at else None,
+                }
+                for p in providers
+            ]
+
+    def update_ai_provider(
+        self,
+        provider_id: int,
+        user_id: int,
+        name: Optional[str] = None,
+        provider_type: Optional[str] = None,
+        openai_api_key: Optional[str] = None,
+        openai_base_url: Optional[str] = None,
+        openai_model: Optional[str] = None,
+        openai_temperature: Optional[float] = None,
+        openai_max_tokens: Optional[int] = None,
+        ollama_base_url: Optional[str] = None,
+        ollama_model: Optional[str] = None,
+    ) -> Optional[AIProvider]:
+        """更新 AI Provider"""
+        with self.get_session() as session:
+            provider = (
+                session.query(AIProvider)
+                .filter(AIProvider.id == provider_id, AIProvider.user_id == user_id)
+                .first()
+            )
+            if provider is None:
+                return None
+
+            if name is not None:
+                provider.name = name
+            if provider_type is not None:
+                provider.provider_type = provider_type
+            if openai_api_key is not None:
+                provider.openai_api_key = openai_api_key
+            if openai_base_url is not None:
+                provider.openai_base_url = openai_base_url
+            if openai_model is not None:
+                provider.openai_model = openai_model
+            if openai_temperature is not None:
+                provider.openai_temperature = int(openai_temperature * 100)
+            if openai_max_tokens is not None:
+                provider.openai_max_tokens = openai_max_tokens
+            if ollama_base_url is not None:
+                provider.ollama_base_url = ollama_base_url
+            if ollama_model is not None:
+                provider.ollama_model = ollama_model
+
+            provider.updated_at = now_utc()
+            session.merge(provider)
+            session.flush()
+            session.refresh(provider)
+            return provider
+
+    def delete_ai_provider(self, provider_id: int, user_id: int) -> bool:
+        """删除 AI Provider"""
+        with self.get_session() as session:
+            # 检查是否是当前激活的 provider
+            ai_config = (
+                session.query(AIConfig)
+                .filter(AIConfig.user_id == user_id)
+                .first()
+            )
+            if ai_config and ai_config.active_provider_id == provider_id:
+                # 清除激活状态
+                ai_config.active_provider_id = None
+                session.merge(ai_config)
+
+            deleted = (
+                session.query(AIProvider)
+                .filter(AIProvider.id == provider_id, AIProvider.user_id == user_id)
+                .delete()
+            )
+            return deleted > 0
+
+    def set_active_ai_provider(self, provider_id: int, user_id: int) -> bool:
+        """设置激活的 AI Provider"""
+        with self.get_session() as session:
+            # 验证 provider 存在且属于该用户
+            provider = (
+                session.query(AIProvider)
+                .filter(AIProvider.id == provider_id, AIProvider.user_id == user_id)
+                .first()
+            )
+            if provider is None:
+                return False
+
+            # 获取或创建 AIConfig
+            ai_config = (
+                session.query(AIConfig)
+                .filter(AIConfig.user_id == user_id)
+                .first()
+            )
+
+            if ai_config:
+                ai_config.active_provider_id = provider_id
+                ai_config.updated_at = now_utc()
+                session.merge(ai_config)
+            else:
+                ai_config = AIConfig(
+                    user_id=user_id,
+                    active_provider_id=provider_id,
+                )
+                session.add(ai_config)
+
+            return True
+
+    def get_active_ai_provider(self, user_id: int) -> Optional[dict]:
+        """获取用户当前激活的 AI Provider"""
+        with self.get_session() as session:
+            # 获取 AIConfig
+            ai_config = (
+                session.query(AIConfig)
+                .filter(AIConfig.user_id == user_id)
+                .first()
+            )
+
+            if ai_config is None or ai_config.active_provider_id is None:
+                return None
+
+            # 获取激活的 provider
+            provider = (
+                session.query(AIProvider)
+                .filter(AIProvider.id == ai_config.active_provider_id)
+                .first()
+            )
+
+            if provider is None:
+                return None
+
+            return {
+                "id": provider.id,
+                "user_id": provider.user_id,
+                "name": provider.name,
+                "provider_type": provider.provider_type,
+                "openai_api_key": provider.openai_api_key,
+                "openai_base_url": provider.openai_base_url,
+                "openai_model": provider.openai_model,
+                "openai_temperature": provider.openai_temperature / 100.0,
+                "openai_max_tokens": provider.openai_max_tokens,
+                "ollama_base_url": provider.ollama_base_url,
+                "ollama_model": provider.ollama_model,
+                "created_at": provider.created_at.isoformat() if provider.created_at else None,
+                "updated_at": provider.updated_at.isoformat() if provider.updated_at else None,
+            }
 
     # ==================== Auto Review 配置相关操作 ====================
 

@@ -40,11 +40,24 @@ export interface OllamaConfig {
   model: string;
 }
 
+/** AI Provider 配置 */
+export interface AIProvider {
+  id: number;
+  name: string;
+  provider_type: 'openai' | 'ollama';
+  openai?: OpenAIConfig;
+  ollama?: OllamaConfig;
+}
+
+/** AI Providers 响应 */
+export interface AIProvidersResponse {
+  providers: AIProvider[];
+  active_provider_id: number | null;
+}
+
 /** AI 配置 */
 export interface AIConfig {
-  provider: 'openai' | 'ollama';
-  openai: OpenAIConfig;
-  ollama: OllamaConfig;
+  active_provider_id: number | null;
   review_rules: string[];
   summary_prompt?: string;
 }
@@ -53,7 +66,24 @@ export interface AIConfig {
 export interface AppConfig {
   gitlab?: GitLabConfig | null;
   ai?: AIConfig | null;
+  providers?: AIProvidersResponse | null;
   allow_registration?: boolean;
+}
+
+/** 创建 AI Provider 请求 */
+export interface CreateAIProviderRequest {
+  name: string;
+  provider_type: 'openai' | 'ollama';
+  openai?: OpenAIConfig;
+  ollama?: OllamaConfig;
+}
+
+/** 更新 AI Provider 请求 */
+export interface UpdateAIProviderRequest {
+  name?: string;
+  provider_type?: 'openai' | 'ollama';
+  openai?: Partial<OpenAIConfig>;
+  ollama?: Partial<OllamaConfig>;
 }
 
 /** 项目信息 */

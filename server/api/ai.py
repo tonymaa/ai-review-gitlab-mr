@@ -141,27 +141,28 @@ _review_tasks: dict = {}
 
 # ==================== 辅助函数 ====================
 
-def _build_review_config(ai_config: dict, provider: str) -> dict:
-    """构建审查配置"""
+def _build_review_config_from_provider(provider_config: dict, review_rules: list) -> dict:
+    """从激活的 provider 配置构建审查配置"""
+    provider_type = provider_config.get("provider_type", "openai")
     config = {
-        "provider": provider,
+        "provider": provider_type,
         "temperature": 0.3,
-        "max_tokens": 4000,
-        "review_rules": ai_config.get("review_rules", []),
+        "max_tokens": 10000,
+        "review_rules": review_rules,
     }
 
-    if provider == "openai":
+    if provider_type == "openai":
         config.update({
-            "api_key": ai_config.get("openai_api_key", ""),
-            "model": ai_config.get("openai_model", "gpt-4"),
-            "base_url": ai_config.get("openai_base_url"),
-            "temperature": ai_config.get("openai_temperature", 0.3),
-            "max_tokens": ai_config.get("openai_max_tokens", 4000),
+            "api_key": provider_config.get("openai_api_key", ""),
+            "model": provider_config.get("openai_model", "gpt-4"),
+            "base_url": provider_config.get("openai_base_url"),
+            "temperature": provider_config.get("openai_temperature", 0.3),
+            "max_tokens": provider_config.get("openai_max_tokens", 10000),
         })
-    elif provider == "ollama":
+    elif provider_type == "ollama":
         config.update({
-            "base_url": ai_config.get("ollama_base_url", "http://localhost:11434"),
-            "model": ai_config.get("ollama_model", "codellama"),
+            "base_url": provider_config.get("ollama_base_url", "http://localhost:11434"),
+            "model": provider_config.get("ollama_model", "codellama"),
         })
 
     return config
@@ -323,9 +324,10 @@ async def start_review(
     if not ai_config:
         raise HTTPException(status_code=400, detail="请先配置 AI")
 
-    provider = request.provider or ai_config.get("provider", "openai")
-    if provider == "openai" and not ai_config.get("openai_api_key"):
-        raise HTTPException(status_code=400, detail="OpenAI API Key 未配置")
+    # 获取激活的 provider
+    active_provider = db.get_active_ai_provider(user_id)
+    if not active_provider:
+        raise HTTPException(status_code=400, detail="请先激活一个 AI Provider")
 
     # 生成任务 ID
     import uuid
@@ -337,7 +339,7 @@ async def start_review(
     }
 
     # 构建配置
-    config = _build_review_config(ai_config, provider)
+    config = _build_review_config_from_provider(active_provider, ai_config.get("review_rules", []))
 
     # 启动后台任务
     background_tasks.add_task(
@@ -388,9 +390,10 @@ async def review_single_file(
     if not ai_config:
         raise HTTPException(status_code=400, detail="请先配置 AI")
 
-    provider = request.provider or ai_config.get("provider", "openai")
-    if provider == "openai" and not ai_config.get("openai_api_key"):
-        raise HTTPException(status_code=400, detail="OpenAI API Key 未配置")
+    # 获取激活的 provider
+    active_provider = db.get_active_ai_provider(user_id)
+    if not active_provider:
+        raise HTTPException(status_code=400, detail="请先激活一个 AI Provider")
 
     try:
         # 获取 MR 信息
@@ -410,7 +413,7 @@ async def review_single_file(
             raise HTTPException(status_code=404, detail="文件不存在")
 
         # 创建审查器
-        config = _build_review_config(ai_config, provider)
+        config = _build_review_config_from_provider(active_provider, ai_config.get("review_rules", []))
         reviewer = create_reviewer(**config)
 
         # 执行审查
@@ -571,7 +574,6 @@ Source: {mr.source_branch} → Target: {mr.target_branch}
 async def summarize_changes(
     project_id: str = Query(..., description="项目 ID"),
     mr_iid: int = Query(..., description="MR IID"),
-    provider: str = Query("openai", description="AI 提供商"),
     user_id: int = Depends(get_current_user_id),
     db: DatabaseManager = Depends(get_db),
     client: GitLabClient = Depends(get_gitlab_client),
@@ -582,11 +584,13 @@ async def summarize_changes(
     if not ai_config:
         raise HTTPException(status_code=400, detail="请先配置 AI")
 
-    if provider == "openai" and not ai_config.get("openai_api_key"):
-        raise HTTPException(status_code=400, detail="OpenAI API Key 未配置")
+    # 获取激活的 provider
+    active_provider = db.get_active_ai_provider(user_id)
+    if not active_provider:
+        raise HTTPException(status_code=400, detail="请先激活一个 AI Provider")
 
     # 构建配置
-    config = _build_review_config(ai_config, provider)
+    config = _build_review_config_from_provider(active_provider, ai_config.get("review_rules", []))
 
     async def event_generator():
         async for chunk in stream_summarize(client, project_id, mr_iid, config, ai_config):
@@ -706,13 +710,14 @@ async def ai_reply(
     if not ai_config:
         raise HTTPException(status_code=400, detail="请先配置 AI")
 
-    provider = request.provider or ai_config.get("provider", "openai")
-    if provider == "openai" and not ai_config.get("openai_api_key"):
-        raise HTTPException(status_code=400, detail="OpenAI API Key 未配置")
+    # 获取激活的 provider
+    active_provider = db.get_active_ai_provider(user_id)
+    if not active_provider:
+        raise HTTPException(status_code=400, detail="请先激活一个 AI Provider")
 
     try:
         # 构建配置
-        config = _build_review_config(ai_config, provider)
+        config = _build_review_config_from_provider(active_provider, ai_config.get("review_rules", []))
 
         # 生成回复
         reply = await generate_ai_reply(

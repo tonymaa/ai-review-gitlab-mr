@@ -334,9 +334,14 @@ class AutoReviewScheduler:
         self, client: GitLabClient, project_id: int, mr_iid: int, mr, ai_config: Dict[str, Any]
     ) -> str:
         """生成 MR 总结"""
-        from server.api.ai import _build_review_config, stream_summarize
+        from server.api.ai import _build_review_config_from_provider, stream_summarize
 
-        config = _build_review_config(ai_config, ai_config.get("provider", "openai"))
+        # 获取激活的 provider
+        active_provider = self.db.get_active_ai_provider(ai_config["user_id"] if "user_id" in ai_config else None)
+        if not active_provider:
+            return "AI Provider 未配置或未激活"
+
+        config = _build_review_config_from_provider(active_provider, ai_config.get("review_rules", []))
 
         summary_parts = []
         async for chunk in stream_summarize(
