@@ -379,6 +379,17 @@ class DatabaseManager:
                 logger.info("已创建 auto_review_configs 表")
             except Exception as e:
                 logger.warning(f"创建 auto_review_configs 表失败: {e}")
+        else:
+            # 删除旧的 review_type 列（如果存在）
+            ar_columns = [col['name'] for col in inspector.get_columns('auto_review_configs')]
+            if 'review_type' in ar_columns:
+                try:
+                    with self.engine.connect() as conn:
+                        conn.execute(text("ALTER TABLE auto_review_configs DROP COLUMN review_type"))
+                        conn.commit()
+                    logger.info("已删除 auto_review_configs 表的 review_type 列")
+                except Exception as e:
+                    logger.warning(f"删除 review_type 列失败: {e}")
 
     def _migrate_legacy_ai_config(self):
         """迁移旧的 AI 配置到新的 ai_providers 表"""
