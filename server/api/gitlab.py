@@ -5,12 +5,23 @@
 
 import logging
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List
 
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
+
+
+def to_utc_iso(dt: datetime | None) -> str:
+    """将 datetime 转换为 UTC 时区的 ISO 格式字符串"""
+    if dt is None:
+        return ""
+    if dt.tzinfo is None:
+        # 如果是 naive datetime，假设它是 UTC
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).isoformat()
 
 # 添加项目根目录到 Python 路径
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -161,9 +172,9 @@ class MRModel(BaseModel):
 
     @classmethod
     def from_info(cls, info: MergeRequestInfo) -> "MRModel":
-        # 处理时间字段转换为字符串
-        created_at_str = info.created_at.isoformat() if info.created_at else ""
-        updated_at_str = info.updated_at.isoformat() if info.updated_at else ""
+        # 处理时间字段转换为字符串（带 UTC 时区）
+        created_at_str = to_utc_iso(info.created_at)
+        updated_at_str = to_utc_iso(info.updated_at)
 
         # 处理作者信息
         author_name = info.author.name if info.author else "Unknown"

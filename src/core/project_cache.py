@@ -4,7 +4,7 @@ import json
 import logging
 from pathlib import Path
 from typing import Optional, Dict, Any, List
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +87,7 @@ class ProjectCache:
         new_project = {
             "project_id": project_id,
             "project_name": project_name,
-            "last_accessed": datetime.now().isoformat(),
+            "last_accessed": datetime.now(timezone.utc).isoformat(),
         }
         projects.insert(0, new_project)
 

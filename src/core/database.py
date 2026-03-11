@@ -40,6 +40,16 @@ def now_utc():
     return datetime.now(timezone.utc)
 
 
+def to_utc_iso(dt: datetime | None) -> str:
+    """将 datetime 转换为 UTC 时区的 ISO 格式字符串"""
+    if dt is None:
+        return ""
+    if dt.tzinfo is None:
+        # 如果是 naive datetime，假设它是 UTC
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).isoformat()
+
+
 def hash_password(password: str) -> str:
     """哈希密码"""
     return pwd_context.hash(password)
@@ -724,7 +734,7 @@ class DatabaseManager:
                 return {
                     "id": user.id,
                     "username": user.username,
-                    "created_at": user.created_at.isoformat() if user.created_at else None,
+                    "created_at": to_utc_iso(user.created_at),
                     "is_active": user.is_active,
                 }
         return None
@@ -744,7 +754,7 @@ class DatabaseManager:
             return {
                 "id": user.id,
                 "username": user.username,
-                "created_at": user.created_at.isoformat() if user.created_at else None,
+                "created_at": to_utc_iso(user.created_at),
                 "is_active": user.is_active,
             }
 
@@ -805,8 +815,8 @@ class DatabaseManager:
                 "url": config.url,
                 "token": config.token,
                 "default_project_id": config.default_project_id,
-                "created_at": config.created_at.isoformat() if config.created_at else None,
-                "updated_at": config.updated_at.isoformat() if config.updated_at else None,
+                "created_at": to_utc_iso(config.created_at),
+                "updated_at": to_utc_iso(config.updated_at),
             }
 
     def delete_gitlab_config(self, user_id: int) -> bool:
@@ -890,8 +900,8 @@ class DatabaseManager:
                 "active_provider_id": config.active_provider_id,
                 "review_rules": review_rules or [],
                 "summary_prompt": config.summary_prompt,
-                "created_at": config.created_at.isoformat() if config.created_at else None,
-                "updated_at": config.updated_at.isoformat() if config.updated_at else None,
+                "created_at": to_utc_iso(config.created_at),
+                "updated_at": to_utc_iso(config.updated_at),
             }
 
     def delete_ai_config(self, user_id: int) -> bool:
@@ -966,8 +976,8 @@ class DatabaseManager:
                 "openai_max_tokens": provider.openai_max_tokens,
                 "ollama_base_url": provider.ollama_base_url,
                 "ollama_model": provider.ollama_model,
-                "created_at": provider.created_at.isoformat() if provider.created_at else None,
-                "updated_at": provider.updated_at.isoformat() if provider.updated_at else None,
+                "created_at": to_utc_iso(provider.created_at),
+                "updated_at": to_utc_iso(provider.updated_at),
             }
 
     def list_ai_providers(self, user_id: int) -> List[dict]:
@@ -993,8 +1003,8 @@ class DatabaseManager:
                     "openai_max_tokens": p.openai_max_tokens,
                     "ollama_base_url": p.ollama_base_url,
                     "ollama_model": p.ollama_model,
-                    "created_at": p.created_at.isoformat() if p.created_at else None,
-                    "updated_at": p.updated_at.isoformat() if p.updated_at else None,
+                    "created_at": to_utc_iso(p.created_at),
+                    "updated_at": to_utc_iso(p.updated_at),
                 }
                 for p in providers
             ]
@@ -1136,8 +1146,8 @@ class DatabaseManager:
                 "openai_max_tokens": provider.openai_max_tokens,
                 "ollama_base_url": provider.ollama_base_url,
                 "ollama_model": provider.ollama_model,
-                "created_at": provider.created_at.isoformat() if provider.created_at else None,
-                "updated_at": provider.updated_at.isoformat() if provider.updated_at else None,
+                "created_at": to_utc_iso(provider.created_at),
+                "updated_at": to_utc_iso(provider.updated_at),
             }
 
     # ==================== Auto Review 配置相关操作 ====================
@@ -1241,8 +1251,8 @@ class DatabaseManager:
                 "auto_approve_keywords": auto_approve_keywords,
                 "auto_approve_mode": config.auto_approve_mode,
                 "add_as_comment": config.add_as_comment,
-                "created_at": config.created_at.isoformat() if config.created_at else None,
-                "updated_at": config.updated_at.isoformat() if config.updated_at else None,
+                "created_at": to_utc_iso(config.created_at),
+                "updated_at": to_utc_iso(config.updated_at),
             }
 
     def delete_auto_review_config(self, user_id: int) -> bool:
@@ -1356,7 +1366,7 @@ class DatabaseManager:
                     "project_id": record.project_id,
                     "mr_iid": record.mr_iid,
                     "summary": record.summary,
-                    "processed_at": record.processed_at.isoformat() if record.processed_at else None,
+                    "processed_at": to_utc_iso(record.processed_at),
                     "web_url": record.web_url,
                     "title": record.title,
                 })
