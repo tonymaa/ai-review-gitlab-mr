@@ -605,7 +605,19 @@ async def approve_merge_request(
             raise HTTPException(status_code=500, detail="批准失败")
 
     except GitLabException as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        error_msg = str(e)
+        # 如果是 401 错误，可能是已经批准过了，检查批准状态
+        if "401" in error_msg:
+            try:
+                approval_state = client.get_merge_request_approval_state(
+                    project_id=project_id,
+                    mr_iid=mr_iid,
+                )
+                if approval_state.get("approved", False):
+                    return {"status": "ok", "message": "已批准（之前已批准过）"}
+            except Exception:
+                pass
+        raise HTTPException(status_code=500, detail=error_msg)
     except Exception as e:
         logger.error(f"批准 MR 失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
