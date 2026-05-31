@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 
 from src.core.database import DatabaseManager
+from src.core.exceptions import AIAuthError, AIQuotaError
 from src.gitlab.client import GitLabClient
 from src.ai.reviewer import create_reviewer
 from server.api.auto_review import update_user_task_status
@@ -330,29 +331,80 @@ class AutoReviewScheduler:
             except Exception as e:
                 logger.error(f"自动批准 MR {mr_project_id}!{mr_iid} 失败: {e}")
 
+    _AUTH_QUOTA_KEYWORDS = ("认证失败", "api_key", "api key", "密钥", "配额", "quota", "429", "401", "unauthorized", "authentication failed", "rate limit", "expired")
+
+    def _is_auth_or_quota_error(self, error_text: str) -> bool:
+        """判断错误文本是否属于认证/配额类错误"""
+        text_lower = error_text.lower()
+        return any(kw in text_lower for kw in self._AUTH_QUOTA_KEYWORDS)
+
     async def _generate_mr_summary(
         self, client: GitLabClient, project_id: int, mr_iid: int, mr, ai_config: Dict[str, Any]
     ) -> str:
-        """生成 MR 总结"""
+        """生成 MR 总结，支持多 Provider fallback（仅认证/配额错误时）"""
         from server.api.ai import _build_review_config_from_provider, stream_summarize
 
+        user_id = ai_config.get("user_id")
+        if not user_id:
+            raise RuntimeError("无法获取用户 ID")
+
         # 获取激活的 provider
-        active_provider = self.db.get_active_ai_provider(ai_config["user_id"] if "user_id" in ai_config else None)
+        active_provider = self.db.get_active_ai_provider(user_id)
         if not active_provider:
-            return "AI Provider 未配置或未激活"
+            raise RuntimeError("AI Provider 未配置或未激活")
 
-        config = _build_review_config_from_provider(active_provider, ai_config.get("review_rules", []))
+        # 获取所有 provider，active 排第一，其余按创建时间排序
+        all_providers = self.db.list_ai_providers(user_id)
+        providers = sorted(
+            all_providers,
+            key=lambda p: 0 if p["id"] == active_provider["id"] else 1
+        )
 
-        summary_parts = []
-        async for chunk in stream_summarize(
-            client, str(project_id), mr_iid, config, ai_config
-        ):
-            summary_parts.append(chunk)
+        last_error = None
+        for provider in providers:
+            provider_name = provider.get("name", provider.get("provider_type", "unknown"))
+            config = _build_review_config_from_provider(provider, ai_config.get("review_rules", []))
 
-        return "".join(summary_parts)
+            summary_parts = []
+            try:
+                async for chunk in stream_summarize(
+                    client, str(project_id), mr_iid, config, ai_config
+                ):
+                    summary_parts.append(chunk)
+            except (AIAuthError, AIQuotaError) as e:
+                # 防御性代码：当前 stream_summarize 会吞掉所有异常转为 yield 文本
+                # 此分支暂不会触发，保留以应对 stream_summarize 未来可能的行为变更
+                logger.warning(f"Provider '{provider_name}' 失败: {e}，尝试下一个")
+                last_error = e
+                continue
+            except Exception as e:
+                logger.error(f"MR {project_id}!{mr_iid} 的 AI 总结生成异常: {e}")
+                raise
+
+            result = "".join(summary_parts)
+            # 检测 stream_summarize 内部捕获异常后 yield 的错误标记
+            if "[错误:" in result:
+                if self._is_auth_or_quota_error(result):
+                    logger.warning(f"Provider '{provider_name}' 失败: {result.strip()}，尝试下一个")
+                    last_error = RuntimeError(result)
+                    continue
+                raise RuntimeError(f"AI 总结失败: {result}")
+
+            if provider["id"] != active_provider["id"]:
+                logger.info(f"MR {project_id}!{mr_iid} 成功使用 fallback provider '{provider_name}' 完成总结")
+            return result
+
+        # 所有 provider 都失败了
+        raise last_error or RuntimeError("所有 AI Provider 均不可用")
 
     def _should_auto_approve(self, summary: str, config: Dict[str, Any]) -> bool:
         """判断是否应该自动批准"""
+        # 防御性检查：正常情况下 _generate_mr_summary 已在返回前 raise 异常
+        # 此处作为兜底，防止异常路径上的边界情况
+        if "[错误:" in summary:
+            logger.warning("总结中包含错误信息，跳过自动批准")
+            return False
+
         mode = config.get("auto_approve_mode", "always")
 
         if mode == "never":
@@ -362,7 +414,7 @@ class AutoReviewScheduler:
         elif mode == "keyword_only":
             keywords = config.get("auto_approve_keywords", [])
             if not keywords:
-                return True  # 没有关键词时默认批准
+                return False  # 没有关键词时不批准
             # 检查总结中是否包含任一关键词
             return any(kw.lower() in summary.lower() for kw in keywords)
 
