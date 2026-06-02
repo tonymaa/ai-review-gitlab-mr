@@ -570,6 +570,91 @@ Source: {mr.source_branch} → Target: {mr.target_branch}
         yield f"\n[错误: {str(e)}]"
 
 
+async def stream_re_review(
+    client: GitLabClient,
+    project_id: str,
+    mr_iid: int,
+    config: dict,
+    ai_config: dict,
+    previous_review_comment: str,
+    review_round: int,
+) -> AsyncGenerator[str, None]:
+    """流式生成 follow-up 复查总结，携带上一轮审查评论作为上下文"""
+    from src.ai.prompts import RE_REVIEW_SYSTEM_PROMPT
+
+    try:
+        # 获取 MR 信息和 diffs
+        mr = client.get_merge_request(project_id, mr_iid)
+        diff_files = client.get_merge_request_diffs(project_id, mr_iid)
+
+        # 构建 diff 内容（与 stream_summarize 保持一致）
+        diff_content_list = []
+        files_summary = []
+
+        for df in diff_files:
+            change_type = "A" if df.new_file else "D" if df.deleted_file else "M"
+            files_summary.append(f"{change_type} {df.get_display_path()}")
+            diff_content_list.append(f"\n=== {change_type} {df.get_display_path()} ===\n")
+            diff_content_list.append(df.diff[:5000])
+
+        full_diff = "\n".join(diff_content_list)
+        files_changed_str = "\n".join(files_summary)
+
+        # 截断上一轮评论，避免 token 过长
+        truncated_comment = (previous_review_comment or "")[:4000]
+
+        prompt = f"""这是第 {review_round} 轮 follow-up 复查。
+
+## 上一轮 AI 审查结果（第 {review_round - 1} 轮）
+{truncated_comment}
+
+## 当前 Merge Request
+Title: {mr.title}
+Source: {mr.source_branch} → Target: {mr.target_branch}
+Description: {mr.description or "(无描述)"}
+
+Files changed ({len(diff_files)}):
+{files_changed_str}
+
+## 当前 Diff
+{full_diff}
+
+## 指令
+1. 对照上一轮审查中提出的每个问题，判断已修复 (FIXED) 或仍存在 (REMAINS)
+2. 识别最新变更中引入的任何新问题
+3. 给出最终建议：APPROVE 或 DO NOT APPROVE
+4. 如果建议 APPROVE，请说明哪些问题已解决
+
+请用清晰的格式输出复查总结。"""
+
+        # 创建审查器并调用流式 API
+        reviewer = create_reviewer(**config)
+
+        if isinstance(reviewer, OpenAIReviewer):
+            messages = [
+                {"role": "system", "content": RE_REVIEW_SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ]
+
+            stream = await reviewer.client.chat.completions.create(
+                model=reviewer.model,
+                messages=messages,
+                temperature=reviewer.temperature,
+                max_tokens=reviewer.max_tokens,
+                stream=True,
+            )
+
+            async for chunk in stream:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+        else:
+            yield "Follow-up 复查当前仅支持 OpenAI 提供商"
+
+    except Exception as e:
+        logger.error(f"Follow-up 复查失败: {e}", exc_info=True)
+        yield f"\n[错误: {str(e)}]"
+
+
 @router.get("/summarize")
 async def summarize_changes(
     project_id: str = Query(..., description="项目 ID"),

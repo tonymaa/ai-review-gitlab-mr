@@ -179,6 +179,10 @@ class AutoReviewConfig(Base):
     # 审查配置
     add_as_comment = Column(Boolean, nullable=False, default=True)  # 是否将总结添加为MR评论
 
+    # Follow-up review 配置
+    follow_up_enabled = Column(Boolean, nullable=False, default=False)  # 是否开启 follow-up review
+    follow_up_max_retries = Column(Integer, nullable=False, default=5)  # 最大复查轮次
+
     # 时间戳
     created_at = Column(DateTime, default=now_utc)
     updated_at = Column(DateTime, default=now_utc, onupdate=now_utc)
@@ -400,6 +404,44 @@ class DatabaseManager:
                     logger.info("已删除 auto_review_configs 表的 review_type 列")
                 except Exception as e:
                     logger.warning(f"删除 review_type 列失败: {e}")
+
+            # 添加 follow-up review 相关列到 auto_review_configs
+            if 'follow_up_enabled' not in ar_columns:
+                try:
+                    with self.engine.connect() as conn:
+                        conn.execute(text("ALTER TABLE auto_review_configs ADD COLUMN follow_up_enabled BOOLEAN DEFAULT 0"))
+                        conn.commit()
+                    logger.info("已添加 follow_up_enabled 列到 auto_review_configs 表")
+                except Exception as e:
+                    logger.warning(f"添加 follow_up_enabled 列失败: {e}")
+
+            if 'follow_up_max_retries' not in ar_columns:
+                try:
+                    with self.engine.connect() as conn:
+                        conn.execute(text("ALTER TABLE auto_review_configs ADD COLUMN follow_up_max_retries INTEGER DEFAULT 5"))
+                        conn.commit()
+                    logger.info("已添加 follow_up_max_retries 列到 auto_review_configs 表")
+                except Exception as e:
+                    logger.warning(f"添加 follow_up_max_retries 列失败: {e}")
+
+        # 添加 follow-up review 相关列到 processed_mrs
+        if 'processed_mrs' in inspector.get_table_names():
+            pm_columns = [col['name'] for col in inspector.get_columns('processed_mrs')]
+            pm_new_cols = {
+                'head_sha': 'VARCHAR(40)',
+                'review_round': 'INTEGER DEFAULT 1',
+                'review_status': 'VARCHAR(20)',
+                'last_review_comment': 'TEXT',
+            }
+            for col_name, col_type in pm_new_cols.items():
+                if col_name not in pm_columns:
+                    try:
+                        with self.engine.connect() as conn:
+                            conn.execute(text(f"ALTER TABLE processed_mrs ADD COLUMN {col_name} {col_type}"))
+                            conn.commit()
+                        logger.info(f"已添加 {col_name} 列到 processed_mrs 表")
+                    except Exception as e:
+                        logger.warning(f"添加 {col_name} 列失败: {e}")
 
     def _migrate_legacy_ai_config(self):
         """迁移旧的 AI 配置到新的 ai_providers 表"""
@@ -1162,6 +1204,8 @@ class DatabaseManager:
         auto_approve_keywords: Optional[List[str]] = None,
         auto_approve_mode: str = "always",
         add_as_comment: bool = True,
+        follow_up_enabled: bool = False,
+        follow_up_max_retries: int = 5,
     ) -> AutoReviewConfig:
         """创建或更新自动审查配置"""
         with self.get_session() as session:
@@ -1186,6 +1230,8 @@ class DatabaseManager:
                 existing.auto_approve_keywords = keywords_json
                 existing.auto_approve_mode = auto_approve_mode
                 existing.add_as_comment = add_as_comment
+                existing.follow_up_enabled = follow_up_enabled
+                existing.follow_up_max_retries = follow_up_max_retries
                 existing.updated_at = now_utc()
                 session.merge(existing)
                 session.flush()
@@ -1202,6 +1248,8 @@ class DatabaseManager:
                     auto_approve_keywords=keywords_json,
                     auto_approve_mode=auto_approve_mode,
                     add_as_comment=add_as_comment,
+                    follow_up_enabled=follow_up_enabled,
+                    follow_up_max_retries=follow_up_max_retries,
                 )
                 session.add(config)
                 session.flush()
@@ -1251,6 +1299,8 @@ class DatabaseManager:
                 "auto_approve_keywords": auto_approve_keywords,
                 "auto_approve_mode": config.auto_approve_mode,
                 "add_as_comment": config.add_as_comment,
+                "follow_up_enabled": getattr(config, "follow_up_enabled", False),
+                "follow_up_max_retries": getattr(config, "follow_up_max_retries", 5),
                 "created_at": to_utc_iso(config.created_at),
                 "updated_at": to_utc_iso(config.updated_at),
             }
@@ -1292,6 +1342,10 @@ class DatabaseManager:
         summary: Optional[str] = None,
         web_url: Optional[str] = None,
         title: Optional[str] = None,
+        head_sha: Optional[str] = None,
+        review_round: int = 1,
+        review_status: Optional[str] = None,
+        last_review_comment: Optional[str] = None,
     ) -> None:
         """记录已处理的 MR"""
         with self.get_session() as session:
@@ -1310,6 +1364,10 @@ class DatabaseManager:
                 existing.summary = summary
                 existing.web_url = web_url
                 existing.title = title
+                existing.head_sha = head_sha
+                existing.review_round = review_round
+                existing.review_status = review_status
+                existing.last_review_comment = last_review_comment
                 session.merge(existing)
             else:
                 record = ProcessedMR(
@@ -1319,6 +1377,10 @@ class DatabaseManager:
                     summary=summary,
                     web_url=web_url,
                     title=title,
+                    head_sha=head_sha,
+                    review_round=review_round,
+                    review_status=review_status,
+                    last_review_comment=last_review_comment,
                 )
                 session.add(record)
 
@@ -1335,6 +1397,37 @@ class DatabaseManager:
                 .first()
             )
             return existing is not None
+
+    def get_processed_mr_record(
+        self, user_id: int, project_id: int, mr_iid: int
+    ) -> Optional[Dict[str, Any]]:
+        """获取已处理 MR 的完整记录（用于 follow-up review 判断）"""
+        with self.get_session() as session:
+            existing = (
+                session.query(ProcessedMR)
+                .filter(
+                    ProcessedMR.user_id == user_id,
+                    ProcessedMR.project_id == project_id,
+                    ProcessedMR.mr_iid == mr_iid,
+                )
+                .first()
+            )
+            if existing is None:
+                return None
+            return {
+                "id": existing.id,
+                "user_id": existing.user_id,
+                "project_id": existing.project_id,
+                "mr_iid": existing.mr_iid,
+                "summary": existing.summary,
+                "processed_at": to_utc_iso(existing.processed_at),
+                "web_url": existing.web_url,
+                "title": existing.title,
+                "head_sha": existing.head_sha,
+                "review_round": existing.review_round or 1,
+                "review_status": existing.review_status,
+                "last_review_comment": existing.last_review_comment,
+            }
 
     def get_processed_mr_count(self, user_id: int) -> int:
         """获取用户已处理的 MR 数量"""
@@ -1369,6 +1462,9 @@ class DatabaseManager:
                     "processed_at": to_utc_iso(record.processed_at),
                     "web_url": record.web_url,
                     "title": record.title,
+                    "head_sha": record.head_sha,
+                    "review_round": record.review_round or 1,
+                    "review_status": record.review_status,
                 })
             return result
 
@@ -1410,6 +1506,12 @@ class ProcessedMR(Base):
     processed_at = Column(DateTime, default=now_utc, index=True)
     web_url = Column(String(500), nullable=True)  # MR 在 GitLab 中的链接
     title = Column(String(500), nullable=True)  # MR 标题
+
+    # Follow-up review 字段
+    head_sha = Column(String(40), nullable=True)  # 本次 review 时的 commit SHA
+    review_round = Column(Integer, nullable=False, default=1)  # 第几轮 review（1=首次）
+    review_status = Column(String(20), nullable=True)  # "approved" | "not_approved"
+    last_review_comment = Column(Text, nullable=True)  # 最近一轮 AI 评论（传给下轮做上下文）
 
     __table_args__ = (
         Index("idx_user_project_mr", "user_id", "project_id", "mr_iid", unique=True),

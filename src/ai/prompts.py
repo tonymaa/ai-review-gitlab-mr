@@ -76,6 +76,17 @@ Focus on:
 
 Output in JSON format."""
 
+# Follow-up re-review system prompt
+RE_REVIEW_SYSTEM_PROMPT = """你是一个专业的代码审查助手，正在进行 Follow-up 复查。
+
+你的任务是：
+1. 对照上一轮 AI 审查提出的所有问题，逐一检查是否已被修复
+2. 识别最新代码变更中引入的任何新问题
+3. 给出明确的 APPROVE（批准）或 DO NOT APPROVE（不批准）建议
+4. 当所有 critical 和 warning 级别的问题都已解决时，推荐 APPROVE
+
+请公平对待 —— 当开发者确实解决了之前的问题时，明确承认并说明。"""
+
 
 def build_review_prompt(
     title: str,

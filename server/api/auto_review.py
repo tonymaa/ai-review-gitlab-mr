@@ -78,6 +78,8 @@ class AutoReviewConfigRequest(BaseModel):
     auto_approve_keywords: List[str] = Field(default_factory=list, description="自动批准关键词列表")
     auto_approve_mode: str = Field(default="always", description="自动批准模式: always, keyword_only, never")
     add_as_comment: bool = Field(default=True, description="是否将总结添加为MR评论")
+    follow_up_enabled: bool = Field(default=False, description="是否开启 follow-up review")
+    follow_up_max_retries: int = Field(default=5, ge=1, le=20, description="最大复查轮次")
 
 
 class AutoReviewConfigResponse(BaseModel):
@@ -89,6 +91,8 @@ class AutoReviewConfigResponse(BaseModel):
     auto_approve_keywords: List[str]
     auto_approve_mode: str
     add_as_comment: bool
+    follow_up_enabled: bool = False
+    follow_up_max_retries: int = 5
     is_running: bool = Field(default=False, description="当前任务是否运行中")
     last_run_at: Optional[str] = None
     next_run_at: Optional[str] = None
@@ -152,6 +156,8 @@ async def get_auto_review_config(
             "auto_approve_keywords": [],
             "auto_approve_mode": "always",
             "add_as_comment": True,
+            "follow_up_enabled": False,
+            "follow_up_max_retries": 5,
         }
 
     # 获取任务状态
@@ -182,6 +188,8 @@ async def update_auto_review_config(
         auto_approve_keywords=request.auto_approve_keywords,
         auto_approve_mode=request.auto_approve_mode,
         add_as_comment=request.add_as_comment,
+        follow_up_enabled=request.follow_up_enabled,
+        follow_up_max_retries=request.follow_up_max_retries,
     )
 
     logger.info(f"用户 {user_id} 更新了自动审查配置: enabled={request.enabled}")
@@ -261,6 +269,9 @@ class ProcessedMRItem(BaseModel):
     processed_at: str
     web_url: Optional[str] = None
     title: Optional[str] = None
+    review_round: int = 1
+    review_status: Optional[str] = None
+    head_sha: Optional[str] = None
 
 
 @router.get("/history", response_model=List[ProcessedMRItem])

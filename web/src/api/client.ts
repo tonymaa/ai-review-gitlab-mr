@@ -562,6 +562,8 @@ export interface AutoReviewConfig {
   auto_approve_keywords: string[];
   auto_approve_mode: 'always' | 'keyword_only' | 'never';
   add_as_comment: boolean;
+  follow_up_enabled?: boolean;
+  follow_up_max_retries?: number;
   is_running?: boolean;
   last_run_at?: string | null;
   next_run_at?: string | null;

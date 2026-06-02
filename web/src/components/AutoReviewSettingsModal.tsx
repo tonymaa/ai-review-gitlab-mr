@@ -23,6 +23,8 @@ export const getDefaultAutoReviewConfig = (): AutoReviewConfig => ({
   auto_approve_keywords: [],
   auto_approve_mode: 'always',
   add_as_comment: true,
+  follow_up_enabled: false,
+  follow_up_max_retries: 5,
 })
 
 // ==================== 组件 ====================
@@ -270,6 +272,37 @@ export const AutoReviewSettingsModal = forwardRef<AutoReviewSettingsModalRef, Au
             <Switch />
           </Form.Item>
 
+          <Divider orientation="left" plain>Follow-Up 复查设置</Divider>
+
+          <Form.Item
+            label="开启 Follow-Up 复查"
+            name="follow_up_enabled"
+            valuePropName="checked"
+            tooltip="首次 review 未批准时，监控 MR 新提交并自动复查，直到批准或达到最大轮次"
+          >
+            <Switch />
+          </Form.Item>
+
+          <Form.Item
+            noStyle
+            shouldUpdate={(prevValues, currentValues) =>
+              prevValues.follow_up_enabled !== currentValues.follow_up_enabled
+            }
+          >
+            {({ getFieldValue }) =>
+              getFieldValue('follow_up_enabled') ? (
+                <Form.Item
+                  label="最大复查轮次"
+                  name="follow_up_max_retries"
+                  tooltip="达到最大轮次后不再复查该 MR"
+                  rules={[{ type: 'number', min: 1, max: 20, message: '轮次必须在 1-20 之间' }]}
+                >
+                  <InputNumber min={1} max={20} style={{ width: '100%' }} />
+                </Form.Item>
+              ) : null
+            }
+          </Form.Item>
+
           <Divider />
 
           <div style={{ fontSize: 12, color: '#999' }}>
@@ -280,6 +313,7 @@ export const AutoReviewSettingsModal = forwardRef<AutoReviewSettingsModalRef, Au
               <li>对新的 MR 调用 AI 总结接口</li>
               <li>将 AI 总结作为评论回复到 MR</li>
               <li>根据批准模式配置自动批准</li>
+              <li>如开启 Follow-Up，未批准的 MR 有新提交时自动复查</li>
             </ol>
             <p style={{ marginTop: 8, color: '#faad14' }}>
               注意：自动审查在服务器后端运行，无需保持此页面打开。

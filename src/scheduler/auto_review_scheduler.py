@@ -232,6 +232,7 @@ class AutoReviewScheduler:
 
         # 筛选 MR
         filtered_mrs = []
+        follow_up_mrs = []  # (mr_info, processed_record)
         for mr_info, project_info in merge_requests:
             mr_iid = getattr(mr_info, "iid", None)
             mr_project_id = getattr(mr_info, "project_id", None)
@@ -263,19 +264,25 @@ class AutoReviewScheduler:
 
             # 检查是否已处理过
             if mr_iid and mr_project_id:
-                if self.db.is_mr_processed(user_id, mr_project_id, mr_iid):
-                    logger.debug(f"  → 跳过: MR {mr_project_id}!{mr_iid} 已处理过")
+                record = self.db.get_processed_mr_record(user_id, mr_project_id, mr_iid)
+                if record is not None:
+                    # 已 review 过，判断是否需要 follow-up
+                    if self._should_follow_up(config, record, mr_info):
+                        logger.info(f"  → 需要 follow-up: {mr_project_id}!{mr_iid} - {mr_title}")
+                        follow_up_mrs.append((mr_info, record))
+                    else:
+                        logger.debug(f"  → 跳过: MR {mr_project_id}!{mr_iid} 已处理且无需 follow-up")
                     continue
 
             logger.info(f"  → 筛选通过: {mr_project_id}!{mr_iid} - {mr_title}")
             filtered_mrs.append(mr_info)
 
-        logger.info(f"用户 {user_id} 找到 {len(filtered_mrs)} 个待处理的 MR")
+        logger.info(f"用户 {user_id} 找到 {len(filtered_mrs)} 个待处理的 MR, {len(follow_up_mrs)} 个需要 follow-up")
 
-        # 处理每个 MR
+        # 处理首次 review
         for mr in filtered_mrs:
             try:
-                await self._review_and_approve_mr(
+                result = await self._review_and_approve_mr(
                     client, mr, user_id, config, ai_config
                 )
                 # 记录已处理
@@ -284,25 +291,42 @@ class AutoReviewScheduler:
                 mr_web_url = getattr(mr, "web_url", None)
                 mr_title = getattr(mr, "title", None)
                 if mr_iid and mr_project_id:
+                    current_head_sha = self._get_mr_head_sha(mr)
+                    summary = result.get("summary") if result else None
+                    review_status = result.get("review_status") if result else None
                     self.db.upsert_processed_mr(
                         user_id, mr_project_id, mr_iid,
                         web_url=mr_web_url,
-                        title=mr_title
+                        title=mr_title,
+                        summary=summary,
+                        head_sha=current_head_sha,
+                        review_round=1,
+                        review_status=review_status,
+                        last_review_comment=summary,
                     )
             except Exception as e:
                 logger.error(f"处理 MR 失败: {e}")
 
+        # 处理 follow-up review
+        for mr, record in follow_up_mrs:
+            try:
+                await self._follow_up_review_mr(
+                    client, mr, user_id, config, ai_config, record
+                )
+            except Exception as e:
+                logger.error(f"Follow-up review 失败: {e}")
+
     async def _review_and_approve_mr(
         self, client: GitLabClient, mr, user_id: int,
         config: Dict[str, Any], ai_config: Dict[str, Any]
-    ):
-        """审查并批准单个 MR"""
+    ) -> Optional[Dict[str, Any]]:
+        """审查并批准单个 MR，返回审查结果"""
         mr_iid = getattr(mr, "iid", None)
         mr_project_id = getattr(mr, "project_id", None)
 
         if not mr_iid or not mr_project_id:
             logger.warning(f"MR 缺少必要字段: iid={mr_iid}, project_id={mr_project_id}")
-            return
+            return None
 
         # 生成 AI 总结
         summary = await self._generate_mr_summary(
@@ -323,6 +347,7 @@ class AutoReviewScheduler:
 
         # 判断是否自动批准
         should_approve = self._should_auto_approve(summary, config)
+        review_status = "approved" if should_approve else "not_approved"
 
         if should_approve:
             try:
@@ -330,6 +355,8 @@ class AutoReviewScheduler:
                 logger.info(f"已自动批准 MR {mr_project_id}!{mr_iid}")
             except Exception as e:
                 logger.error(f"自动批准 MR {mr_project_id}!{mr_iid} 失败: {e}")
+
+        return {"summary": summary, "review_status": review_status}
 
     _AUTH_QUOTA_KEYWORDS = ("认证失败", "api_key", "api key", "密钥", "配额", "quota", "429", "401", "unauthorized", "authentication failed", "rate limit", "expired")
 
@@ -419,3 +446,191 @@ class AutoReviewScheduler:
             return any(kw.lower() in summary.lower() for kw in keywords)
 
         return False
+
+    def _get_mr_head_sha(self, mr) -> Optional[str]:
+        """从 MR 对象中提取 head_sha"""
+        diff_refs = getattr(mr, "diff_refs", None)
+        if diff_refs and isinstance(diff_refs, dict):
+            return diff_refs.get("head_sha")
+        return None
+
+    def _should_follow_up(
+        self, config: Dict[str, Any], record: Dict[str, Any], mr_info
+    ) -> bool:
+        """判断已处理过的 MR 是否需要进行 follow-up review"""
+        # 功能未开启
+        if not config.get("follow_up_enabled", False):
+            return False
+
+        # 已 approved，不再管
+        if record.get("review_status") == "approved":
+            return False
+
+        # 达到最大轮次
+        max_retries = config.get("follow_up_max_retries", 5)
+        current_round = record.get("review_round", 1)
+        if current_round >= max_retries:
+            logger.info(
+                f"MR {record['project_id']}!{record['mr_iid']} 已达最大复查轮次 "
+                f"({current_round}/{max_retries})"
+            )
+            return False
+
+        # 检查是否有新提交（head_sha 变化）
+        stored_sha = record.get("head_sha")
+        current_sha = self._get_mr_head_sha(mr_info)
+
+        # 没有存储的 sha（旧记录），允许一次 follow-up
+        if not stored_sha:
+            return True
+
+        # 当前 MR 拿不到 sha，跳过
+        if not current_sha:
+            return False
+
+        # sha 没变化，无新提交
+        if current_sha == stored_sha:
+            logger.debug(
+                f"MR {record['project_id']}!{record['mr_iid']} head_sha 未变化，跳过"
+            )
+            return False
+
+        # 有新提交，需要 follow-up
+        return True
+
+    async def _follow_up_review_mr(
+        self,
+        client: GitLabClient,
+        mr,
+        user_id: int,
+        config: Dict[str, Any],
+        ai_config: Dict[str, Any],
+        record: Dict[str, Any],
+    ) -> None:
+        """对已审查但未批准的 MR 进行 follow-up 复查"""
+        mr_iid = getattr(mr, "iid", None)
+        mr_project_id = getattr(mr, "project_id", None)
+        if not mr_iid or not mr_project_id:
+            return
+
+        previous_comment = record.get("last_review_comment") or record.get("summary") or ""
+        next_round = record.get("review_round", 1) + 1
+        current_head_sha = self._get_mr_head_sha(mr)
+
+        logger.info(
+            f"开始 follow-up review: MR {mr_project_id}!{mr_iid}, "
+            f"第 {next_round} 轮"
+        )
+
+        # 生成 follow-up 总结
+        summary = await self._generate_re_review_summary(
+            client, mr_project_id, mr_iid, mr, ai_config,
+            previous_comment, next_round
+        )
+
+        # 添加为评论
+        if config.get("add_as_comment", True):
+            try:
+                comment_body = (
+                    f"## AI Follow-Up Review (Round {next_round})\n\n{summary}"
+                )
+                client.create_merge_request_note(
+                    mr_project_id, mr_iid, comment_body
+                )
+                logger.info(
+                    f"已为 MR {mr_project_id}!{mr_iid} 添加第 {next_round} 轮 follow-up 评论"
+                )
+            except Exception as e:
+                logger.error(f"添加 follow-up 评论失败: {e}")
+
+        # 判断是否批准
+        should_approve = self._should_auto_approve(summary, config)
+        review_status = "approved" if should_approve else "not_approved"
+
+        if should_approve:
+            try:
+                client.approve_merge_request(mr_project_id, mr_iid)
+                logger.info(
+                    f"Follow-up: 已批准 MR {mr_project_id}!{mr_iid}（第 {next_round} 轮）"
+                )
+            except Exception as e:
+                logger.error(f"Follow-up 批准失败: {e}")
+
+        # 更新 processed MR 记录
+        mr_web_url = getattr(mr, "web_url", None)
+        mr_title = getattr(mr, "title", None)
+        self.db.upsert_processed_mr(
+            user_id=user_id,
+            project_id=mr_project_id,
+            mr_iid=mr_iid,
+            web_url=mr_web_url,
+            title=mr_title,
+            summary=summary,
+            head_sha=current_head_sha,
+            review_round=next_round,
+            review_status=review_status,
+            last_review_comment=summary,
+        )
+
+    async def _generate_re_review_summary(
+        self,
+        client: GitLabClient,
+        project_id: int,
+        mr_iid: int,
+        mr,
+        ai_config: Dict[str, Any],
+        previous_comment: str,
+        review_round: int,
+    ) -> str:
+        """生成 follow-up 复查总结，携带上一轮评论作为上下文"""
+        from server.api.ai import _build_review_config_from_provider, stream_re_review
+
+        user_id = ai_config.get("user_id")
+        if not user_id:
+            raise RuntimeError("无法获取用户 ID")
+
+        active_provider = self.db.get_active_ai_provider(user_id)
+        if not active_provider:
+            raise RuntimeError("AI Provider 未配置或未激活")
+
+        all_providers = self.db.list_ai_providers(user_id)
+        providers = sorted(
+            all_providers,
+            key=lambda p: 0 if p["id"] == active_provider["id"] else 1
+        )
+
+        last_error = None
+        for provider in providers:
+            provider_name = provider.get("name", provider.get("provider_type", "unknown"))
+            config = _build_review_config_from_provider(provider, ai_config.get("review_rules", []))
+
+            summary_parts = []
+            try:
+                async for chunk in stream_re_review(
+                    client, str(project_id), mr_iid, config, ai_config,
+                    previous_comment, review_round
+                ):
+                    summary_parts.append(chunk)
+            except (AIAuthError, AIQuotaError) as e:
+                logger.warning(f"Provider '{provider_name}' 失败: {e}，尝试下一个")
+                last_error = e
+                continue
+            except Exception as e:
+                logger.error(f"MR {project_id}!{mr_iid} 的 follow-up 复查异常: {e}")
+                raise
+
+            result = "".join(summary_parts)
+            if "[错误:" in result:
+                if self._is_auth_or_quota_error(result):
+                    logger.warning(f"Provider '{provider_name}' 失败: {result.strip()}，尝试下一个")
+                    last_error = RuntimeError(result)
+                    continue
+                raise RuntimeError(f"Follow-up 复查失败: {result}")
+
+            if provider["id"] != active_provider["id"]:
+                logger.info(
+                    f"MR {project_id}!{mr_iid} follow-up 成功使用 fallback provider '{provider_name}'"
+                )
+            return result
+
+        raise last_error or RuntimeError("所有 AI Provider 均不可用")
