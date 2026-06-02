@@ -200,121 +200,121 @@ class AutoReviewScheduler:
         async with lock:
             logger.info(f"开始处理用户 {user_id} 的自动审查")
 
-        # 获取用户的 GitLab 配置
-        gitlab_config = self.db.get_gitlab_config(user_id)
-        if not gitlab_config:
-            logger.warning(f"用户 {user_id} 未配置 GitLab")
-            return
+            # 获取用户的 GitLab 配置
+            gitlab_config = self.db.get_gitlab_config(user_id)
+            if not gitlab_config:
+                logger.warning(f"用户 {user_id} 未配置 GitLab")
+                return
 
-        # 获取用户的 AI 配置
-        ai_config = self.db.get_ai_config(user_id)
-        if not ai_config:
-            logger.warning(f"用户 {user_id} 未配置 AI")
-            return
+            # 获取用户的 AI 配置
+            ai_config = self.db.get_ai_config(user_id)
+            if not ai_config:
+                logger.warning(f"用户 {user_id} 未配置 AI")
+                return
 
-        client = GitLabClient(
-            url=gitlab_config["url"],
-            token=gitlab_config["token"],
-        )
-
-        # 解析目标项目列表
-        target_projects = config.get("target_projects") or []
-        target_creators = config.get("target_creators") or []
-
-        try:
-            # 获取相关的 MR
-            merge_requests = client.list_all_merge_requests_related_to_me(
-                state="opened"
+            client = GitLabClient(
+                url=gitlab_config["url"],
+                token=gitlab_config["token"],
             )
-        except Exception as e:
-            logger.error(f"获取用户 {user_id} 的 MR 列表失败: {e}")
-            return
 
-        # 筛选 MR
-        filtered_mrs = []
-        follow_up_mrs = []  # (mr_info, processed_record)
-        for mr_info, project_info in merge_requests:
-            mr_iid = getattr(mr_info, "iid", None)
-            mr_project_id = getattr(mr_info, "project_id", None)
-            mr_title = getattr(mr_info, "title", "")
-            mr_author = getattr(mr_info, "author", "")
+            # 解析目标项目列表
+            target_projects = config.get("target_projects") or []
+            target_creators = config.get("target_creators") or []
 
-            # 获取作者名称
-            if hasattr(mr_author, "name"):
-                # GitLabUser 对象
-                author_name = mr_author.name
-            elif isinstance(mr_author, dict):
-                author_name = mr_author.get("name", "")
-            else:
-                author_name = str(mr_author)
-
-            logger.debug(f"检查 MR: {mr_project_id}!{mr_iid} - {mr_title} (作者: {author_name})")
-
-            # 检查项目筛选
-            if target_projects:
-                if str(mr_project_id) not in target_projects:
-                    logger.debug(f"  → 跳过: 项目 {mr_project_id} 不在目标项目列表中")
-                    continue
-
-            # 检查创建者筛选
-            if target_creators:
-                if author_name not in target_creators:
-                    logger.debug(f"  → 跳过: 作者 {author_name} 不在目标创建者列表中")
-                    continue
-
-            # 检查是否已处理过
-            if mr_iid and mr_project_id:
-                record = self.db.get_processed_mr_record(user_id, mr_project_id, mr_iid)
-                if record is not None:
-                    # 已 review 过，判断是否需要 follow-up
-                    if self._should_follow_up(config, record, mr_info):
-                        logger.info(f"  → 需要 follow-up: {mr_project_id}!{mr_iid} - {mr_title}")
-                        follow_up_mrs.append((mr_info, record))
-                    else:
-                        logger.debug(f"  → 跳过: MR {mr_project_id}!{mr_iid} 已处理且无需 follow-up")
-                    continue
-
-            logger.info(f"  → 筛选通过: {mr_project_id}!{mr_iid} - {mr_title}")
-            filtered_mrs.append(mr_info)
-
-        logger.info(f"用户 {user_id} 找到 {len(filtered_mrs)} 个待处理的 MR, {len(follow_up_mrs)} 个需要 follow-up")
-
-        # 处理首次 review
-        for mr in filtered_mrs:
             try:
-                result = await self._review_and_approve_mr(
-                    client, mr, user_id, config, ai_config
+                # 获取相关的 MR
+                merge_requests = client.list_all_merge_requests_related_to_me(
+                    state="opened"
                 )
-                # 记录已处理
-                mr_iid = getattr(mr, "iid", None)
-                mr_project_id = getattr(mr, "project_id", None)
-                mr_web_url = getattr(mr, "web_url", None)
-                mr_title = getattr(mr, "title", None)
+            except Exception as e:
+                logger.error(f"获取用户 {user_id} 的 MR 列表失败: {e}")
+                return
+
+            # 筛选 MR
+            filtered_mrs = []
+            follow_up_mrs = []  # (mr_info, processed_record)
+            for mr_info, project_info in merge_requests:
+                mr_iid = getattr(mr_info, "iid", None)
+                mr_project_id = getattr(mr_info, "project_id", None)
+                mr_title = getattr(mr_info, "title", "")
+                mr_author = getattr(mr_info, "author", "")
+
+                # 获取作者名称
+                if hasattr(mr_author, "name"):
+                    # GitLabUser 对象
+                    author_name = mr_author.name
+                elif isinstance(mr_author, dict):
+                    author_name = mr_author.get("name", "")
+                else:
+                    author_name = str(mr_author)
+
+                logger.debug(f"检查 MR: {mr_project_id}!{mr_iid} - {mr_title} (作者: {author_name})")
+
+                # 检查项目筛选
+                if target_projects:
+                    if str(mr_project_id) not in target_projects:
+                        logger.debug(f"  → 跳过: 项目 {mr_project_id} 不在目标项目列表中")
+                        continue
+
+                # 检查创建者筛选
+                if target_creators:
+                    if author_name not in target_creators:
+                        logger.debug(f"  → 跳过: 作者 {author_name} 不在目标创建者列表中")
+                        continue
+
+                # 检查是否已处理过
                 if mr_iid and mr_project_id:
-                    current_head_sha = self._get_mr_head_sha(mr)
-                    summary = result.get("summary") if result else None
-                    review_status = result.get("review_status") if result else None
-                    self.db.upsert_processed_mr(
-                        user_id, mr_project_id, mr_iid,
-                        web_url=mr_web_url,
-                        title=mr_title,
-                        summary=summary,
-                        head_sha=current_head_sha,
-                        review_round=1,
-                        review_status=review_status,
-                        last_review_comment=summary,
-                    )
-            except Exception as e:
-                logger.error(f"处理 MR 失败: {e}")
+                    record = self.db.get_processed_mr_record(user_id, mr_project_id, mr_iid)
+                    if record is not None:
+                        # 已 review 过，判断是否需要 follow-up
+                        if self._should_follow_up(config, record, mr_info):
+                            logger.info(f"  → 需要 follow-up: {mr_project_id}!{mr_iid} - {mr_title}")
+                            follow_up_mrs.append((mr_info, record))
+                        else:
+                            logger.debug(f"  → 跳过: MR {mr_project_id}!{mr_iid} 已处理且无需 follow-up")
+                        continue
 
-        # 处理 follow-up review
-        for mr, record in follow_up_mrs:
-            try:
-                await self._follow_up_review_mr(
-                    client, mr, user_id, config, ai_config, record
-                )
-            except Exception as e:
-                logger.error(f"Follow-up review 失败: {e}")
+                logger.info(f"  → 筛选通过: {mr_project_id}!{mr_iid} - {mr_title}")
+                filtered_mrs.append(mr_info)
+
+            logger.info(f"用户 {user_id} 找到 {len(filtered_mrs)} 个待处理的 MR, {len(follow_up_mrs)} 个需要 follow-up")
+
+            # 处理首次 review
+            for mr in filtered_mrs:
+                try:
+                    result = await self._review_and_approve_mr(
+                        client, mr, user_id, config, ai_config
+                    )
+                    # 记录已处理
+                    mr_iid = getattr(mr, "iid", None)
+                    mr_project_id = getattr(mr, "project_id", None)
+                    mr_web_url = getattr(mr, "web_url", None)
+                    mr_title = getattr(mr, "title", None)
+                    if mr_iid and mr_project_id:
+                        current_head_sha = self._get_mr_head_sha(mr)
+                        summary = result.get("summary") if result else None
+                        review_status = result.get("review_status") if result else None
+                        self.db.upsert_processed_mr(
+                            user_id, mr_project_id, mr_iid,
+                            web_url=mr_web_url,
+                            title=mr_title,
+                            summary=summary,
+                            head_sha=current_head_sha,
+                            review_round=1,
+                            review_status=review_status,
+                            last_review_comment=summary,
+                        )
+                except Exception as e:
+                    logger.error(f"处理 MR 失败: {e}")
+
+            # 处理 follow-up review
+            for mr, record in follow_up_mrs:
+                try:
+                    await self._follow_up_review_mr(
+                        client, mr, user_id, config, ai_config, record
+                    )
+                except Exception as e:
+                    logger.error(f"Follow-up review 失败: {e}")
 
     async def _review_and_approve_mr(
         self, client: GitLabClient, mr, user_id: int,
@@ -480,13 +480,16 @@ class AutoReviewScheduler:
         stored_sha = record.get("head_sha")
         current_sha = self._get_mr_head_sha(mr_info)
 
-        # 没有存储的 sha（旧记录），允许一次 follow-up
+        # 当前 MR 拿不到 sha，无法判断是否有新提交，跳过
+        if not current_sha:
+            logger.debug(
+                f"MR {record['project_id']}!{record['mr_iid']} 无法获取当前 head_sha，跳过 follow-up"
+            )
+            return False
+
+        # 没有存储的 sha（旧记录），当前有 sha 可对比，允许一次 follow-up
         if not stored_sha:
             return True
-
-        # 当前 MR 拿不到 sha，跳过
-        if not current_sha:
-            return False
 
         # sha 没变化，无新提交
         if current_sha == stored_sha:
