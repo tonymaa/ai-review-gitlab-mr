@@ -1,5 +1,7 @@
 # GitLab AI Review
 
+**English** | [简体中文](./README_zh-CN.md)
+
 > AI-powered code review for GitLab Merge Requests
 
 GitLab AI Review analyzes MR code changes using AI (OpenAI / Ollama) and generates intelligent review comments. It ships as a web app (FastAPI + React) or a desktop app (PyQt6).
