@@ -525,6 +525,10 @@ class APIClient {
     mr_iid: number;
     summary: string | null;
     processed_at: string;
+    web_url?: string;
+    title?: string;
+    review_round: number;
+    review_status: string | null;
   }[]> {
     const response = await this.client.get('/auto-review/history', {
       params: { limit },

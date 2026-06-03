@@ -267,9 +267,10 @@ class AutoReviewScheduler:
                     record = self.db.get_processed_mr_record(user_id, mr_project_id, mr_iid)
                     if record is not None:
                         # 已 review 过，判断是否需要 follow-up
-                        if self._should_follow_up(config, record, mr_info):
+                        resolved_sha, should = self._should_follow_up(config, record, mr_info, client)
+                        if should:
                             logger.info(f"  → 需要 follow-up: {mr_project_id}!{mr_iid} - {mr_title}")
-                            follow_up_mrs.append((mr_info, record))
+                            follow_up_mrs.append((mr_info, record, resolved_sha))
                         else:
                             logger.debug(f"  → 跳过: MR {mr_project_id}!{mr_iid} 已处理且无需 follow-up")
                         continue
@@ -292,6 +293,9 @@ class AutoReviewScheduler:
                     mr_title = getattr(mr, "title", None)
                     if mr_iid and mr_project_id:
                         current_head_sha = self._get_mr_head_sha(mr)
+                        # 列表 API 通常不返回 diff_refs，通过详情 API 获取
+                        if not current_head_sha:
+                            current_head_sha = self._fetch_mr_head_sha(client, mr_project_id, mr_iid)
                         summary = result.get("summary") if result else None
                         review_status = result.get("review_status") if result else None
                         self.db.upsert_processed_mr(
@@ -308,10 +312,10 @@ class AutoReviewScheduler:
                     logger.error(f"处理 MR 失败: {e}")
 
             # 处理 follow-up review
-            for mr, record in follow_up_mrs:
+            for mr, record, resolved_sha in follow_up_mrs:
                 try:
                     await self._follow_up_review_mr(
-                        client, mr, user_id, config, ai_config, record
+                        client, mr, user_id, config, ai_config, record, resolved_sha
                     )
                 except Exception as e:
                     logger.error(f"Follow-up review 失败: {e}")
@@ -454,17 +458,31 @@ class AutoReviewScheduler:
             return diff_refs.get("head_sha")
         return None
 
+    def _fetch_mr_head_sha(self, client: GitLabClient, project_id: int, mr_iid: int) -> Optional[str]:
+        """通过 GitLab 详情 API 获取 MR 的 head_sha"""
+        try:
+            mr_info = client.get_merge_request(project_id, mr_iid)
+            return self._get_mr_head_sha(mr_info)
+        except Exception as e:
+            logger.warning(f"获取 MR {project_id}!{mr_iid} 详情失败: {e}")
+            return None
+
     def _should_follow_up(
-        self, config: Dict[str, Any], record: Dict[str, Any], mr_info
-    ) -> bool:
-        """判断已处理过的 MR 是否需要进行 follow-up review"""
+        self, config: Dict[str, Any], record: Dict[str, Any], mr_info, client: GitLabClient
+    ) -> tuple[Optional[str], bool]:
+        """判断已处理过的 MR 是否需要进行 follow-up review
+
+        Returns:
+            (resolved_sha, should_follow_up) 元组。
+            resolved_sha 为本次解析到的 head_sha（可能为 None），供调用方复用。
+        """
         # 功能未开启
         if not config.get("follow_up_enabled", False):
-            return False
+            return None, False
 
         # 已 approved，不再管
         if record.get("review_status") == "approved":
-            return False
+            return None, False
 
         # 达到最大轮次
         max_retries = config.get("follow_up_max_retries", 5)
@@ -474,32 +492,39 @@ class AutoReviewScheduler:
                 f"MR {record['project_id']}!{record['mr_iid']} 已达最大复查轮次 "
                 f"({current_round}/{max_retries})"
             )
-            return False
+            return None, False
 
         # 检查是否有新提交（head_sha 变化）
         stored_sha = record.get("head_sha")
         current_sha = self._get_mr_head_sha(mr_info)
+
+        # 列表 API 通常不返回 diff_refs，需要通过详情 API 获取
+        if not current_sha:
+            mr_project_id = getattr(mr_info, "project_id", None)
+            mr_iid = getattr(mr_info, "iid", None)
+            if mr_project_id and mr_iid:
+                current_sha = self._fetch_mr_head_sha(client, mr_project_id, mr_iid)
 
         # 当前 MR 拿不到 sha，无法判断是否有新提交，跳过
         if not current_sha:
             logger.debug(
                 f"MR {record['project_id']}!{record['mr_iid']} 无法获取当前 head_sha，跳过 follow-up"
             )
-            return False
+            return None, False
 
         # 没有存储的 sha（旧记录），当前有 sha 可对比，允许一次 follow-up
         if not stored_sha:
-            return True
+            return current_sha, True
 
         # sha 没变化，无新提交
         if current_sha == stored_sha:
             logger.debug(
                 f"MR {record['project_id']}!{record['mr_iid']} head_sha 未变化，跳过"
             )
-            return False
+            return current_sha, False
 
         # 有新提交，需要 follow-up
-        return True
+        return current_sha, True
 
     async def _follow_up_review_mr(
         self,
@@ -509,6 +534,7 @@ class AutoReviewScheduler:
         config: Dict[str, Any],
         ai_config: Dict[str, Any],
         record: Dict[str, Any],
+        resolved_sha: Optional[str] = None,
     ) -> None:
         """对已审查但未批准的 MR 进行 follow-up 复查"""
         mr_iid = getattr(mr, "iid", None)
@@ -518,7 +544,20 @@ class AutoReviewScheduler:
 
         previous_comment = record.get("last_review_comment") or record.get("summary") or ""
         next_round = record.get("review_round", 1) + 1
-        current_head_sha = self._get_mr_head_sha(mr)
+
+        # 优先使用上游已解析的 SHA，避免重复 API 调用
+        current_head_sha = resolved_sha
+        if not current_head_sha:
+            current_head_sha = self._get_mr_head_sha(mr)
+            if not current_head_sha:
+                current_head_sha = self._fetch_mr_head_sha(client, mr_project_id, mr_iid)
+
+        # 无法获取 head_sha 时，保留已有记录不覆盖
+        if not current_head_sha:
+            logger.warning(
+                f"MR {mr_project_id}!{mr_iid} 无法获取 head_sha，跳过本次 follow-up 以保留已有记录"
+            )
+            return
 
         logger.info(
             f"开始 follow-up review: MR {mr_project_id}!{mr_iid}, "

@@ -17,6 +17,8 @@ interface ProcessedMRItem {
   processed_at: string
   web_url?: string
   title?: string
+  review_round: number
+  review_status: string | null
 }
 
 interface ProcessedMRHistoryModalProps {
@@ -154,6 +156,14 @@ const ProcessedMRHistoryModal: FC<ProcessedMRHistoryModalProps> = ({ open, onClo
                     <Space>
                       <Tag color="blue">项目 {item.project_id}</Tag>
                       <Tag>!{item.mr_iid}</Tag>
+                      <Tag color="purple">Round {item.review_round}</Tag>
+                      {item.review_status === 'approved' ? (
+                        <Tag color="green">已批准</Tag>
+                      ) : item.review_status === 'not_approved' ? (
+                        <Tag color="orange">未批准</Tag>
+                      ) : (
+                        <Tag color="default">未知</Tag>
+                      )}
                       <Tag color="green">{formatDateTime(item.processed_at)}</Tag>
                     </Space>
                   }
