@@ -129,6 +129,7 @@ def run_server(host: str = "0.0.0.0", port: int = 8000, reload: bool = False):
         port=port,
         reload=reload,
         log_level="info",
+        loop="asyncio",
     )
 
 

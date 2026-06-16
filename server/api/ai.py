@@ -3,6 +3,7 @@
 提供 AI 代码审查相关的 REST API 接口
 """
 
+import asyncio
 import logging
 import sys
 from pathlib import Path
@@ -416,8 +417,9 @@ async def review_single_file(
         config = _build_review_config_from_provider(active_provider, ai_config.get("review_rules", []))
         reviewer = create_reviewer(**config)
 
-        # 执行审查
-        result = reviewer.review_merge_request(
+        # 执行审查（放到线程池，避免 uvloop 下 nest_asyncio 无法 patch 的问题）
+        result = await asyncio.to_thread(
+            reviewer.review_merge_request,
             mr=mr,
             diff_files=[target_diff],
             review_rules=config["review_rules"],
