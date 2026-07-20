@@ -244,32 +244,8 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
     return !viewedMRs[getMRKey(item)]
   }, [viewedMRs])
 
-  const loadData = useCallback(async () => {
-    setLoading(true)
-    // 列表重新加载时清空批准状态，避免显示旧数据
-    setApprovalMap({})
-    try {
-      const result = mode === 'authored'
-        ? await api.listAuthoredMergeRequests('opened')
-        : await api.listRelatedMergeRequests('opened')
-      // 清理 localStorage 中不再存在的 MR 记录
-      cleanupViewedMRs(result, mode)
-      cleanupApprovedMRs(result, mode)
-      // 更新本地状态
-      setViewedMRs(getViewedMRs(mode))
-      setApprovedMRs(getApprovedMRs(mode))
-      setData(sortMRs(result))
-      // 列表加载完成后，懒加载每个 MR 的批准状态
-      loadApprovalStates(result)
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { detail?: string } }; message?: string }
-      message.error(error.response?.data?.detail || error.message || '加载 MR 列表失败')
-    } finally {
-      setLoading(false)
-    }
-  }, [mode, loadApprovalStates])
-
   // 并发懒加载所有 MR 的批准状态
+  // 注意：此函数需在 loadData 之前定义，因为 loadData 的 useCallback deps 引用它
   const loadApprovalStates = useCallback((items: RelatedMR[]) => {
     // 初始化为 loading 态
     const initialMap: Record<string, ApprovalItemState> = {}
@@ -316,6 +292,31 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
         })
     }
   }, [mode])
+
+  const loadData = useCallback(async () => {
+    setLoading(true)
+    // 列表重新加载时清空批准状态，避免显示旧数据
+    setApprovalMap({})
+    try {
+      const result = mode === 'authored'
+        ? await api.listAuthoredMergeRequests('opened')
+        : await api.listRelatedMergeRequests('opened')
+      // 清理 localStorage 中不再存在的 MR 记录
+      cleanupViewedMRs(result, mode)
+      cleanupApprovedMRs(result, mode)
+      // 更新本地状态
+      setViewedMRs(getViewedMRs(mode))
+      setApprovedMRs(getApprovedMRs(mode))
+      setData(sortMRs(result))
+      // 列表加载完成后，懒加载每个 MR 的批准状态
+      loadApprovalStates(result)
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { detail?: string } }; message?: string }
+      message.error(error.response?.data?.detail || error.message || '加载 MR 列表失败')
+    } finally {
+      setLoading(false)
+    }
+  }, [mode, loadApprovalStates])
 
   useEffect(() => {
     if (open) {
