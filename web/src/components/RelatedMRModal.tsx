@@ -428,6 +428,8 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
         }
       )
       message.success('合并成功')
+      // 乐观更新：立即从列表移除已合并的 MR，避免组件状态复用导致按钮错位
+      setData((prev) => prev.filter((x) => getMRKey(x) !== getMRKey(item)))
       return true;
     } catch (err: unknown) {
       const error = err as { response?: { data?: { detail?: string } }; message?: string }
@@ -480,6 +482,7 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
       <Spin spinning={loading}>
         <List
           dataSource={data}
+          rowKey={(item) => getMRKey(item)}
           renderItem={(item) => (
             <List.Item style={{ display: 'block', padding: '12px 16px' }}>
               <div style={{ position: 'relative' }}>
@@ -641,26 +644,21 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
   )
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function MergeButton(props: any){
-  const {handleMerge, item} = props
-  const [merged, setMerged] = useState(false)
+interface MergeButtonProps {
+  item: RelatedMR
+  handleMerge: (item: RelatedMR) => Promise<boolean>
+}
+
+function MergeButton({ item, handleMerge }: MergeButtonProps) {
   const [loading, setLoading] = useState(false)
 
   const onConfirm = async () => {
     setLoading(true)
     try {
-      const success = await handleMerge(item)
-      if (success) {
-        setMerged(true)
-      }
-    }finally{
+      await handleMerge(item)
+    } finally {
       setLoading(false)
     }
-  }
-
-  if (merged) {
-    return null
   }
 
   return (
