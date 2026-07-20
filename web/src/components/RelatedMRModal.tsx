@@ -2,7 +2,7 @@
  * 与我相关的 MR 弹窗组件
  */
 
-import { type FC, useState, useEffect, useCallback, useRef } from 'react'
+import { type FC, useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { Modal, List, Tag, Avatar, Space, Typography, Spin, Button, Tooltip, message, Popconfirm } from 'antd'
 import type { ButtonProps } from 'antd/es/button'
 
@@ -38,6 +38,7 @@ import {
   LinkOutlined,
   ExportOutlined,
   SettingOutlined,
+  ThunderboltOutlined,
   WarningOutlined,
 } from '@ant-design/icons'
 import type { RelatedMR } from '../types'
@@ -417,6 +418,19 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
     return !item.mr.has_conflicts && item.mr.merge_status === 'can_be_merged'
   }
 
+  // 已批准且可合并：用于一键合并
+  const isApprovedAndMergeable = (item: RelatedMR): boolean => {
+    return canMerge(item) && (item.mr.approved_by?.length ?? 0) > 0
+  }
+
+  // 一键合并候选列表
+  const mergeableItems = useMemo(
+    () => data.filter((item) => isApprovedAndMergeable(item)),
+    // isApprovedAndMergeable 仅依赖 item 数据，无需纳入依赖
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [data]
+  )
+
   const handleMerge = async (item: RelatedMR) => {
     if (!item.project) return false;
     try {
@@ -438,6 +452,49 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
     }
   }
 
+  // 一键合并：顺序合并所有已批准且可合并的 MR
+  const handleMergeAll = async (): Promise<void> => {
+    const targets = data.filter(isApprovedAndMergeable)
+    if (targets.length === 0) return
+
+    setLoading(true)
+    const failedKeys = new Set<string>()
+    const mergedKeys: string[] = []
+
+    try {
+      for (const item of targets) {
+        if (!item.project) continue
+        const key = getMRKey(item)
+        try {
+          await api.acceptMergeRequest(
+            item.project.id.toString(),
+            item.mr.iid,
+            { should_remove_source_branch: false }
+          )
+          mergedKeys.push(key)
+        } catch {
+          failedKeys.add(key)
+        }
+      }
+
+      // 批量移除成功项
+      if (mergedKeys.length > 0) {
+        const mergedSet = new Set(mergedKeys)
+        setData((prev) => prev.filter((x) => !mergedSet.has(getMRKey(x))))
+      }
+
+      if (mergedKeys.length > 0 && failedKeys.size === 0) {
+        message.success(`已合并 ${mergedKeys.length} 个 MR`)
+      } else if (mergedKeys.length > 0 && failedKeys.size > 0) {
+        message.warning(`合并 ${mergedKeys.length} 个成功，${failedKeys.size} 个失败`)
+      } else {
+        message.error('全部合并失败')
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const getStateTag = (state: string) => {
     switch (state) {
       case 'opened':
@@ -455,8 +512,33 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
     <>
       <Modal
         title={
-          <div style={{ display: 'flex', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: 32 }}>
             <span>{mode === 'authored' ? '我创建的 Merge Requests' : '与我相关的 Merge Requests'}</span>
+            {mode === 'authored' && (
+              <Popconfirm
+                title="一键合并"
+                description={
+                  mergeableItems.length > 0
+                    ? `将顺序合并 ${mergeableItems.length} 个已批准且可合并的 MR，是否继续？`
+                    : '当前没有可合并的 MR（需已批准且无冲突）'
+                }
+                onConfirm={handleMergeAll}
+                okText="确定"
+                cancelText="取消"
+                disabled={mergeableItems.length === 0}
+              >
+                <Tooltip title={mergeableItems.length === 0 ? '没有可合并的 MR' : '批量合并已批准的 MR'}>
+                  <Button
+                    type="primary"
+                    size="small"
+                    icon={<ThunderboltOutlined />}
+                    disabled={mergeableItems.length === 0}
+                  >
+                    一键合并{mergeableItems.length > 0 ? ` (${mergeableItems.length})` : ''}
+                  </Button>
+                </Tooltip>
+              </Popconfirm>
+            )}
             {mode === 'related' && (
               <Space>
                 {autoReviewRunning && autoReviewConfig.enabled && (
