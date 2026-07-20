@@ -33,6 +33,7 @@ import {
   CheckCircleOutlined,
   CloseCircleOutlined,
   ClockCircleOutlined,
+  LoadingOutlined,
   MergeCellsOutlined,
   MessageOutlined,
   LinkOutlined,
@@ -98,6 +99,13 @@ interface ViewedMRState {
 
 interface ApprovedMRState {
   [key: string]: boolean
+}
+
+// 单个 MR 的批准状态（懒加载）
+interface ApprovalItemState {
+  loading: boolean
+  approved: boolean
+  approvedBy: Array<{ id: number; name: string; username: string; avatar_url?: string }>
 }
 
 interface RelatedMRModalProps {
@@ -223,6 +231,8 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
   const [data, setData] = useState<RelatedMR[]>([])
   const [viewedMRs, setViewedMRs] = useState<ViewedMRState>({})
   const [approvedMRs, setApprovedMRs] = useState<ApprovedMRState>({})
+  // 懒加载的批准状态：key → ApprovalItemState
+  const [approvalMap, setApprovalMap] = useState<Record<string, ApprovalItemState>>({})
 
   // 自动 Review 配置状态
   const [autoReviewConfig, setAutoReviewConfig] = useState<AutoReviewConfig>(getDefaultAutoReviewConfig())
@@ -236,6 +246,8 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
 
   const loadData = useCallback(async () => {
     setLoading(true)
+    // 列表重新加载时清空批准状态，避免显示旧数据
+    setApprovalMap({})
     try {
       const result = mode === 'authored'
         ? await api.listAuthoredMergeRequests('opened')
@@ -247,11 +259,61 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
       setViewedMRs(getViewedMRs(mode))
       setApprovedMRs(getApprovedMRs(mode))
       setData(sortMRs(result))
+      // 列表加载完成后，懒加载每个 MR 的批准状态
+      loadApprovalStates(result)
     } catch (err: unknown) {
       const error = err as { response?: { data?: { detail?: string } }; message?: string }
       message.error(error.response?.data?.detail || error.message || '加载 MR 列表失败')
     } finally {
       setLoading(false)
+    }
+  }, [mode, loadApprovalStates])
+
+  // 并发懒加载所有 MR 的批准状态
+  const loadApprovalStates = useCallback((items: RelatedMR[]) => {
+    // 初始化为 loading 态
+    const initialMap: Record<string, ApprovalItemState> = {}
+    for (const item of items) {
+      if (!item.project) continue
+      initialMap[getMRKey(item)] = {
+        loading: true,
+        approved: false,
+        approvedBy: [],
+      }
+    }
+    setApprovalMap(initialMap)
+
+    // 逐个并发请求，完成后独立更新
+    for (const item of items) {
+      if (!item.project) continue
+      const key = getMRKey(item)
+      api
+        .getMergeRequestApprovalState(item.project.id.toString(), item.mr.iid)
+        .then((state) => {
+          setApprovalMap((prev) => ({
+            ...prev,
+            [key]: {
+              loading: false,
+              approved: state.approved,
+              approvedBy: state.approved_by,
+            },
+          }))
+          // 与我相关模式下，同步更新 localStorage 的已批准状态
+          if (mode === 'related' && state.approved) {
+            saveApprovedMR(key, mode)
+            setApprovedMRs(getApprovedMRs(mode))
+          }
+        })
+        .catch(() => {
+          setApprovalMap((prev) => ({
+            ...prev,
+            [key]: {
+              loading: false,
+              approved: false,
+              approvedBy: [],
+            },
+          }))
+        })
     }
   }, [mode])
 
@@ -321,6 +383,11 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
       // 标记为已查看和已批准
       saveViewedMR(key, mode)
       setViewedMRs(getViewedMRs(mode))
+      // 同步懒加载的批准状态（当前用户已批准）
+      setApprovalMap((prev) => ({
+        ...prev,
+        [key]: { loading: false, approved: true, approvedBy: prev[key]?.approvedBy ?? [] },
+      }))
     } catch (err: unknown) {
       const error = err as { response?: { data?: { detail?: string } }; message?: string }
       message.error(error.response?.data?.detail || error.message || '批准失败')
@@ -332,6 +399,7 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
 
   const handleUnapprove = async (item: RelatedMR) => {
     if (!item.project) return
+    const key = getMRKey(item)
 
     try {
       await api.unapproveMergeRequest(
@@ -339,12 +407,16 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
         item.mr.iid
       )
       message.success('已取消批准')
+      // 同步懒加载的批准状态（当前用户已取消批准）
+      setApprovalMap((prev) => ({
+        ...prev,
+        [key]: { loading: false, approved: false, approvedBy: prev[key]?.approvedBy ?? [] },
+      }))
     } catch (err: unknown) {
       const error = err as { response?: { data?: { detail?: string } }; message?: string }
       message.error(error.response?.data?.detail || error.message || '取消批准失败')
     } finally{
       // 移除已批准状态
-      const key = getMRKey(item)
       removeApprovedMR(key, mode)
       setApprovedMRs(getApprovedMRs(mode))
     }
@@ -508,6 +580,46 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
     }
   }
 
+  // 根据懒加载的批准状态渲染标签
+  const renderApprovalTag = (item: RelatedMR) => {
+    const key = getMRKey(item)
+    const state = approvalMap[key]
+    if (!state) return null
+
+    if (state.loading) {
+      return <Tag icon={<LoadingOutlined spin />} color="default">批准状态</Tag>
+    }
+
+    // authored 模式看其他人是否批准；related 模式看当前用户是否批准
+    const isApproved = mode === 'authored'
+      ? state.approvedBy.length > 0
+      : state.approved
+
+    if (isApproved) {
+      // authored 模式下，鼠标悬停显示批准者列表
+      if (mode === 'authored' && state.approvedBy.length > 0) {
+        return (
+          <Tooltip
+            title={
+              <Space style={{ flexDirection: 'column', gap: 0 }} size={0}>
+                {state.approvedBy.map((approver) => (
+                  <Text key={approver.username || approver.name}>
+                    {approver.name}
+                  </Text>
+                ))}
+              </Space>
+            }
+          >
+            <Tag icon={<CheckCircleOutlined />} color="success">已批准</Tag>
+          </Tooltip>
+        )
+      }
+      return <Tag icon={<CheckCircleOutlined />} color="success">已批准</Tag>
+    }
+
+    return <Tag icon={<CloseCircleOutlined />} color="default">未批准</Tag>
+  }
+
   return (
     <>
       <Modal
@@ -602,24 +714,7 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
                           <Tag color="red">New</Tag>
                         )}
                         {getStateTag(item.mr.state)}
-                        {(mode !== 'authored' && approvedMRs[getMRKey(item)]) && (
-                          <Tag icon={<CheckCircleOutlined />} color="success">已批准</Tag>
-                        )}
-                        {(mode === 'authored' && item.mr.approved_by && item.mr.approved_by.length > 0) && (
-                          <Tooltip
-                            title={
-                              <Space style={{ flexDirection: 'column', gap: 0 }} size={0}>
-                                {item.mr.approved_by.map((approver: { name: string; username?: string }) => (
-                                  <Text key={approver.username || approver.name}>
-                                    {approver.name}
-                                  </Text>
-                                ))}
-                              </Space>
-                            }
-                          >
-                            <Tag icon={<CheckCircleOutlined />} color="success">已批准</Tag>
-                          </Tooltip>
-                        )}
+                        {renderApprovalTag(item)}
                       </Space>
                     }
                     description={
