@@ -1,103 +1,54 @@
 /**
- * What's New 弹窗：首次看到新 GitHub Release 时展示更新内容
+ * What's New 弹窗：展示 GitHub Release notes
+ *
+ * 受控组件：由父级通过 open 控制显示。首次打开时拉取数据。
+ * 关闭时调用 onClose，并把当前 release id 写入 localStorage 标记为已读。
  */
 
-import { type FC, useEffect, useState } from 'react'
+import { type FC, useEffect, useState, useCallback } from 'react'
 import { Modal, Tag, Typography, Space, Button, Spin } from 'antd'
 import { ExportOutlined } from '@ant-design/icons'
 import ReactMarkdown from 'react-markdown'
 import { api, type WhatsNewRelease } from '../api/client'
+import { markReleaseSeen } from '../utils/whatsNew'
 
 const { Text, Link } = Typography
 
-const STORAGE_KEY = 'last_seen_release_id'
-
-const getLastSeenId = (): number | null => {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY)
-    if (!stored) return null
-    const n = Number.parseInt(stored, 10)
-    return Number.isNaN(n) ? null : n
-  } catch {
-    return null
-  }
-}
-
-const markSeen = (id: number): void => {
-  try {
-    localStorage.setItem(STORAGE_KEY, String(id))
-  } catch {
-    // ignore
-  }
-}
-
 interface WhatsNewModalProps {
-  // 强制显示（用于调试或手动触发），不传则按 localStorage 判断
-  forceOpen?: boolean
+  open: boolean
+  onClose: () => void
 }
 
-const WhatsNewModal: FC<WhatsNewModalProps> = ({ forceOpen }) => {
-  // 懒初始化 loading：只有会发起请求时才置为 true，避免 effect 内同步 setState
-  const [open, setOpen] = useState(false)
-  const [loading, setLoading] = useState(() => {
-    if (forceOpen) return true
-    // 首次访问（无 lastSeenId）不弹窗也不请求
-    return getLastSeenId() !== null
-  })
+const WhatsNewModal: FC<WhatsNewModalProps> = ({ open, onClose }) => {
   const [release, setRelease] = useState<WhatsNewRelease | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [fetched, setFetched] = useState(false)
 
+  const fetchLatest = useCallback(async () => {
+    setLoading(true)
+    try {
+      const r = await api.getWhatsNewLatest()
+      setRelease(r)
+      setFetched(true)
+    } catch {
+      // 静默失败
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  // 首次打开时拉取
   useEffect(() => {
-    // 强制打开时直接拉数据展示
-    if (forceOpen) {
-      let cancelled = false
-      api.getWhatsNewLatest()
-        .then((r) => {
-          if (cancelled || !r) return
-          setRelease(r)
-          setOpen(true)
-        })
-        .catch(() => {
-          // 静默失败
-        })
-        .finally(() => {
-          if (!cancelled) setLoading(false)
-        })
-      return () => {
-        cancelled = true
-      }
+    if (open && !fetched) {
+      fetchLatest()
     }
-
-    // 首次访问（无 lastSeenId）不弹窗，避免噪音
-    const lastSeen = getLastSeenId()
-    if (lastSeen === null) return
-
-    let cancelled = false
-    api.getWhatsNewLatest()
-      .then((r) => {
-        if (cancelled || !r) return
-        // 只有比上次见过的新才弹
-        if (r.id !== lastSeen) {
-          setRelease(r)
-          setOpen(true)
-        }
-      })
-      .catch(() => {
-        // 静默失败，不打扰用户
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [forceOpen])
+  }, [open, fetched, fetchLatest])
 
   const handleClose = () => {
     if (release) {
-      markSeen(release.id)
+      markReleaseSeen(release.id)
     }
-    setOpen(false)
+    onClose()
   }
 
   return (
@@ -132,14 +83,16 @@ const WhatsNewModal: FC<WhatsNewModalProps> = ({ forceOpen }) => {
       }
     >
       <Spin spinning={loading}>
-        {release && (
+        {release ? (
           <>
             <Typography.Title level={4}>{release.name}</Typography.Title>
             <div className="whats-new-body" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
               <ReactMarkdown>{release.body || '本次发布没有额外说明'}</ReactMarkdown>
             </div>
           </>
-        )}
+        ) : !loading ? (
+          <Text type="secondary">暂无可显示的更新信息</Text>
+        ) : null}
       </Spin>
     </Modal>
   )

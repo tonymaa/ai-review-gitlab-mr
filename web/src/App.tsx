@@ -12,6 +12,7 @@ import ConfigDrawer from './components/layout/ConfigDrawer'
 import RelatedMRModal from './components/RelatedMRModal'
 import AuthModal from './components/layout/AuthModal'
 import WhatsNewModal from './components/WhatsNewModal'
+import { getLastSeenReleaseId } from './utils/whatsNew'
 import { api } from './api/client'
 
 const { Content } = Layout
@@ -30,6 +31,9 @@ function AppContent() {
   const [configDrawerOpen, setConfigDrawerOpen] = useState(false)
   const [relatedMROpen, setRelatedMROpen] = useState(false)
   const [authModalOpen, setAuthModalOpen] = useState(false)
+  const [whatsNewOpen, setWhatsNewOpen] = useState(false)
+  // 是否有未读的 release（用于 Header 红点提示）
+  const [hasUnseenRelease, setHasUnseenRelease] = useState(false)
   const [initializing, setInitializing] = useState(true)
 
   // 初始化：检查认证状态
@@ -90,6 +94,37 @@ function AppContent() {
     }
   }, [error, setError])
 
+  // 启动时检查是否有未读的 release
+  // 首次访问（无 lastSeenId）不自动弹窗，只允许手动触发
+  useEffect(() => {
+    let cancelled = false
+    api.getWhatsNewLatest()
+      .then((r) => {
+        if (cancelled || !r) return
+        const lastSeen = getLastSeenReleaseId()
+        if (lastSeen === null) {
+          // 首次访问：不弹，仅记录为"已读当前版本"，避免以后重复弹
+          // 但 Header 按钮仍可手动触发
+          return
+        }
+        if (r.id !== lastSeen) {
+          setHasUnseenRelease(true)
+          setWhatsNewOpen(true)
+        }
+      })
+      .catch(() => {
+        // 静默失败
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const handleCloseWhatsNew = () => {
+    setWhatsNewOpen(false)
+    setHasUnseenRelease(false)
+  }
+
   if (initializing) {
     return (
       <div style={{
@@ -111,6 +146,8 @@ function AppContent() {
             onOpenConnect={() => setConnectModalOpen(true)}
             onOpenConfig={() => setConfigDrawerOpen(true)}
             onOpenRelatedMR={() => setRelatedMROpen(true)}
+            onOpenWhatsNew={() => setWhatsNewOpen(true)}
+            hasUnseenRelease={hasUnseenRelease}
           />
 
           <Content style={{ padding: '0' }}>
@@ -150,7 +187,7 @@ function AppContent() {
         onClose={() => setAuthModalOpen(false)}
       />
 
-      <WhatsNewModal />
+      <WhatsNewModal open={whatsNewOpen} onClose={handleCloseWhatsNew} />
 
       {loading && (
         <div style={{

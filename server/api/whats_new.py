@@ -15,6 +15,8 @@ logger = logging.getLogger(__name__)
 # GitHub API 配置
 GITHUB_API_BASE = "https://api.github.com"
 GITHUB_REPO_ENV = "WHATS_NEW_REPO"
+# 默认仓库（环境变量未配置时使用）
+DEFAULT_REPO = "tonymaa/ai-review-gitlab-mr"
 # 内存缓存：5 分钟避免频繁打 GitHub
 CACHE_TTL_SECONDS = 300
 _cache: dict[str, object] = {"data": None, "fetched_at": 0.0}
@@ -30,15 +32,15 @@ class WhatsNewResponse(BaseModel):
     html_url: str
 
 
-def _get_repo() -> str | None:
-    """从环境变量读取 GitHub 仓库路径，格式 owner/repo"""
-    repo = os.environ.get(GITHUB_REPO_ENV, "").strip()
-    if not repo:
-        return None
-    # 简单校验格式
+def _get_repo() -> str:
+    """读取 GitHub 仓库路径，格式 owner/repo
+
+    优先环境变量 WHATS_NEW_REPO，未配置时用默认仓库。
+    """
+    repo = os.environ.get(GITHUB_REPO_ENV, "").strip() or DEFAULT_REPO
     if "/" not in repo:
-        logger.warning(f"环境变量 {GITHUB_REPO_ENV} 格式错误，应为 owner/repo: {repo}")
-        return None
+        logger.warning(f"仓库路径格式错误，应为 owner/repo: {repo}")
+        return DEFAULT_REPO
     return repo
 
 
@@ -49,8 +51,6 @@ async def get_latest_release():
     环境变量未配置时返回 null，前端静默不弹窗。
     """
     repo = _get_repo()
-    if repo is None:
-        return None
 
     # 缓存命中直接返回
     now = time.time()

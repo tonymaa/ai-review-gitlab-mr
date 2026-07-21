@@ -3,7 +3,7 @@
  */
 
 import { type FC, useState, useMemo } from 'react'
-import { Layout, Button, Space, Dropdown, Avatar, Typography, Tag, Tooltip } from 'antd'
+import { Layout, Button, Space, Dropdown, Avatar, Typography, Tag, Tooltip, Badge } from 'antd'
 import {
   SettingOutlined,
   GitlabOutlined,
@@ -16,6 +16,7 @@ import {
   DeleteOutlined,
   GithubOutlined,
   FormOutlined,
+  NotificationOutlined,
 } from '@ant-design/icons'
 import { useApp } from '../../contexts/AppContext'
 import ProjectSelectorModal from './ProjectSelectorModal'
@@ -31,9 +32,18 @@ interface HeaderProps {
   onOpenConfig: () => void
   onOpenRelatedMR: () => void
   onOpenAuthoredMR?: () => void
+  onOpenWhatsNew?: () => void
+  hasUnseenRelease?: boolean
 }
 
-const Header: FC<HeaderProps> = ({ onOpenConnect, onOpenConfig, onOpenRelatedMR, onOpenAuthoredMR }) => {
+const Header: FC<HeaderProps> = ({
+  onOpenConnect,
+  onOpenConfig,
+  onOpenRelatedMR,
+  onOpenAuthoredMR,
+  onOpenWhatsNew,
+  hasUnseenRelease,
+}) => {
   const { isConnected, user, logout, projects, addProject, removeProject, currentProject, setCurrentProject } = useApp()
   const [projectModalOpen, setProjectModalOpen] = useState(false)
   const [authoredModalOpen, setAuthoredModalOpen] = useState(false)
@@ -202,6 +212,17 @@ const Header: FC<HeaderProps> = ({ onOpenConnect, onOpenConfig, onOpenRelatedMR,
             />
           </Tooltip>
           */}
+
+          <Tooltip title={hasUnseenRelease ? '有新版本未读' : '更新日志'}>
+            <Badge dot={hasUnseenRelease} offset={[-2, 2]}>
+              <Button
+                type="text"
+                icon={<NotificationOutlined />}
+                size="small"
+                onClick={onOpenWhatsNew}
+              />
+            </Badge>
+          </Tooltip>
 
           <Tooltip title="GitHub">
             <a
