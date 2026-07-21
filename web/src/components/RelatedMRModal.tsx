@@ -97,10 +97,6 @@ interface ViewedMRState {
   [key: string]: boolean
 }
 
-interface ApprovedMRState {
-  [key: string]: boolean
-}
-
 // 单个 MR 的批准状态（懒加载）
 interface ApprovalItemState {
   loading: boolean
@@ -117,10 +113,6 @@ interface RelatedMRModalProps {
 // 获取 localStorage key，根据 mode 添加前缀
 const getViewedKey = (mode: 'related' | 'authored'): string => {
   return mode === 'authored' ? 'authored_viewed_mr_items' : 'viewed_mr_items'
-}
-
-const getApprovedKey = (mode: 'related' | 'authored'): string => {
-  return mode === 'authored' ? 'authored_approved_mr_items' : 'approved_mr_items'
 }
 
 // 获取 MR 的唯一标识 key
@@ -168,57 +160,6 @@ const cleanupViewedMRs = (currentItems: RelatedMR[], mode: 'related' | 'authored
   }
 }
 
-// 从 localStorage 读取已批准的 MR 状态
-const getApprovedMRs = (mode: 'related' | 'authored'): ApprovedMRState => {
-  try {
-    const stored = localStorage.getItem(getApprovedKey(mode))
-    return stored ? JSON.parse(stored) : {}
-  } catch {
-    return {}
-  }
-}
-
-// 保存已批准的 MR 状态到 localStorage
-const saveApprovedMR = (key: string, mode: 'related' | 'authored') => {
-  try {
-    const approved = getApprovedMRs(mode)
-    approved[key] = true
-    localStorage.setItem(getApprovedKey(mode), JSON.stringify(approved))
-  } catch {
-    // ignore storage errors
-  }
-}
-
-// 从 localStorage 移除已批准的 MR 状态
-const removeApprovedMR = (key: string, mode: 'related' | 'authored') => {
-  try {
-    const approved = getApprovedMRs(mode)
-    delete approved[key]
-    localStorage.setItem(getApprovedKey(mode), JSON.stringify(approved))
-  } catch {
-    // ignore storage errors
-  }
-}
-
-// 清理 localStorage 中不再存在的已批准 MR 记录
-const cleanupApprovedMRs = (currentItems: RelatedMR[], mode: 'related' | 'authored') => {
-  try {
-    const approved = getApprovedMRs(mode)
-    const currentKeys = new Set(currentItems.map(getMRKey))
-    const cleaned: ApprovedMRState = {}
-
-    for (const [key, value] of Object.entries(approved)) {
-      if (currentKeys.has(key)) {
-        cleaned[key] = value
-      }
-    }
-
-    localStorage.setItem(getApprovedKey(mode), JSON.stringify(cleaned))
-  } catch {
-    // ignore storage errors
-  }
-}
-
 const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'related' }) => {
   const {
     setCurrentProject,
@@ -230,7 +171,6 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
   const [loading, setLoading] = useState(false)
   const [data, setData] = useState<RelatedMR[]>([])
   const [viewedMRs, setViewedMRs] = useState<ViewedMRState>({})
-  const [approvedMRs, setApprovedMRs] = useState<ApprovedMRState>({})
   // 懒加载的批准状态：key → ApprovalItemState
   const [approvalMap, setApprovalMap] = useState<Record<string, ApprovalItemState>>({})
 
@@ -274,11 +214,6 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
               approvedBy: state.approved_by,
             },
           }))
-          // 与我相关模式下，同步更新 localStorage 的已批准状态
-          if (mode === 'related' && state.approved) {
-            saveApprovedMR(key, mode)
-            setApprovedMRs(getApprovedMRs(mode))
-          }
         })
         .catch(() => {
           setApprovalMap((prev) => ({
@@ -291,7 +226,7 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
           }))
         })
     }
-  }, [mode])
+  }, [])
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -303,10 +238,8 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
         : await api.listRelatedMergeRequests('opened')
       // 清理 localStorage 中不再存在的 MR 记录
       cleanupViewedMRs(result, mode)
-      cleanupApprovedMRs(result, mode)
       // 更新本地状态
       setViewedMRs(getViewedMRs(mode))
-      setApprovedMRs(getApprovedMRs(mode))
       setData(sortMRs(result))
       // 列表加载完成后，懒加载每个 MR 的批准状态
       loadApprovalStates(result)
@@ -381,7 +314,7 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
         item.mr.iid
       )
       message.success('已批准')
-      // 标记为已查看和已批准
+      // 标记为已查看
       saveViewedMR(key, mode)
       setViewedMRs(getViewedMRs(mode))
       // 同步懒加载的批准状态（当前用户已批准）
@@ -392,9 +325,6 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
     } catch (err: unknown) {
       const error = err as { response?: { data?: { detail?: string } }; message?: string }
       message.error(error.response?.data?.detail || error.message || '批准失败')
-    } finally {
-      saveApprovedMR(key, mode)
-      setApprovedMRs(getApprovedMRs(mode))
     }
   }
 
@@ -416,10 +346,6 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
     } catch (err: unknown) {
       const error = err as { response?: { data?: { detail?: string } }; message?: string }
       message.error(error.response?.data?.detail || error.message || '取消批准失败')
-    } finally{
-      // 移除已批准状态
-      removeApprovedMR(key, mode)
-      setApprovedMRs(getApprovedMRs(mode))
     }
   }
 
@@ -442,12 +368,15 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
 
       message.success('已发送 LGTM 并批准')
 
-      // 标记为已查看和已批准
+      // 标记为已查看
       const key = getMRKey(item)
       saveViewedMR(key, mode)
-      saveApprovedMR(key, mode)
       setViewedMRs(getViewedMRs(mode))
-      setApprovedMRs(getApprovedMRs(mode))
+      // 同步懒加载的批准状态
+      setApprovalMap((prev) => ({
+        ...prev,
+        [key]: { loading: false, approved: true, approvedBy: prev[key]?.approvedBy ?? [] },
+      }))
     } catch (err: unknown) {
       const error = err as { response?: { data?: { detail?: string } }; message?: string }
       message.error(error.response?.data?.detail || error.message || '发送失败')
@@ -780,7 +709,7 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
                       >
                         发送LGTM并批准
                       </LoadingButton>
-                      {approvedMRs[getMRKey(item)] ? (
+                      {approvalMap[getMRKey(item)]?.approved ? (
                         <LoadingButton
                           size="small"
                           danger
