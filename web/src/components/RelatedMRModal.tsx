@@ -263,7 +263,7 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
       try {
         const config = await api.getAutoReviewConfig()
         setAutoReviewConfig(config)
-      } catch (err) {
+      } catch {
         // 如果获取失败，使用默认配置
         setAutoReviewConfig(getDefaultAutoReviewConfig())
       }
