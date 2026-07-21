@@ -551,6 +551,12 @@ class APIClient {
     const response = await this.client.delete('/auto-review/history');
     return response.data;
   }
+
+  // ==================== What's New ====================
+  async getWhatsNewLatest(): Promise<WhatsNewRelease | null> {
+    const response = await this.client.get<WhatsNewRelease | null>('/whats-new/latest');
+    return response.data;
+  }
 }
 
 // ==================== 类型定义 ====================
@@ -571,6 +577,18 @@ export interface AutoReviewConfig {
   is_running?: boolean;
   last_run_at?: string | null;
   next_run_at?: string | null;
+}
+
+/**
+ * GitHub Release（What's New）
+ */
+export interface WhatsNewRelease {
+  id: number;
+  tag_name: string;
+  name: string;
+  published_at: string;
+  body: string;
+  html_url: string;
 }
 
 // 单例实例

@@ -11,6 +11,7 @@ import ConnectModal from './components/layout/ConnectModal'
 import ConfigDrawer from './components/layout/ConfigDrawer'
 import RelatedMRModal from './components/RelatedMRModal'
 import AuthModal from './components/layout/AuthModal'
+import WhatsNewModal from './components/WhatsNewModal'
 import { api } from './api/client'
 
 const { Content } = Layout
@@ -148,6 +149,8 @@ function AppContent() {
         open={authModalOpen}
         onClose={() => setAuthModalOpen(false)}
       />
+
+      <WhatsNewModal />
 
       {loading && (
         <div style={{

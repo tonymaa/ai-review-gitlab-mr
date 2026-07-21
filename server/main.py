@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.core.config import settings
 from src.core.database import DatabaseManager
-from server.api import gitlab, ai, config, health, auth, auto_review
+from server.api import gitlab, ai, config, health, auth, auto_review, whats_new
 from server.models.session import SessionManager
 from src.scheduler.auto_review_scheduler import AutoReviewScheduler
 
@@ -101,6 +101,7 @@ def create_app() -> FastAPI:
     app.include_router(gitlab.router, prefix="/api/gitlab", tags=["GitLab"])
     app.include_router(ai.router, prefix="/api/ai", tags=["AI"])
     app.include_router(auto_review.router, prefix="/api/auto-review", tags=["AutoReview"])
+    app.include_router(whats_new.router, prefix="/api", tags=["WhatsNew"])
 
     # 静态文件服务 (React 构建产物)
     web_dist = Path(__file__).parent.parent / "web" / "dist"
