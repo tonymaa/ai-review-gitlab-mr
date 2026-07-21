@@ -2,7 +2,7 @@
  * MR 详情组件
  */
 
-import { type FC, useEffect, useState } from 'react'
+import { type FC, useCallback, useEffect, useState } from 'react'
 import { Card, Tag, Space, Typography, Button, message, Spin, Tooltip } from 'antd'
 import {
   CheckCircleOutlined,
@@ -34,21 +34,21 @@ const MRDetail: FC<MRDetailProps> = ({ project_id, mr, onRefresh }) => {
   const [approvalState, setApprovalState] = useState<ApprovalState | null>(null)
   const [loadingApproval, setLoadingApproval] = useState(false)
 
-  useEffect(() => {
-    loadApprovalState()
-  }, [mr])
-
-  const loadApprovalState = async () => {
+  const loadApprovalState = useCallback(async () => {
     setLoadingApproval(true)
     try {
       const state = await api.getMergeRequestApprovalState(project_id, mr.iid)
       setApprovalState(state)
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('获取批准状态失败:', err)
     } finally {
       setLoadingApproval(false)
     }
-  }
+  }, [project_id, mr.iid])
+
+  useEffect(() => {
+    loadApprovalState()
+  }, [loadApprovalState])
 
   const handleApprove = async () => {
     try {
@@ -56,8 +56,9 @@ const MRDetail: FC<MRDetailProps> = ({ project_id, mr, onRefresh }) => {
       message.success('已批准')
       loadApprovalState()
       onRefresh?.()
-    } catch (err: any) {
-      message.error(err.response?.data?.detail || '批准失败')
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { detail?: string } }; message?: string }
+      message.error(error.response?.data?.detail || error.message || '批准失败')
     }
   }
 
@@ -67,8 +68,9 @@ const MRDetail: FC<MRDetailProps> = ({ project_id, mr, onRefresh }) => {
       message.success('已取消批准')
       loadApprovalState()
       onRefresh?.()
-    } catch (err: any) {
-      message.error(err.response?.data?.detail || '取消批准失败')
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { detail?: string } }; message?: string }
+      message.error(error.response?.data?.detail || error.message || '取消批准失败')
     }
   }
 
