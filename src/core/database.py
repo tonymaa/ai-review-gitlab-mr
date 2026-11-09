@@ -19,6 +19,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     and_,
+    or_,
     tuple_,
 )
 from sqlalchemy.ext.declarative import declarative_base
@@ -166,6 +167,7 @@ class AutoReviewConfig(Base):
 
     # 基础配置
     enabled = Column(Boolean, nullable=False, default=False)
+    auto_merge_enabled = Column(Boolean, nullable=False, default=False)
     interval_seconds = Column(Integer, nullable=False, default=120)
 
     # 筛选条件（JSON格式存储）
@@ -423,6 +425,16 @@ class DatabaseManager:
                     logger.info("已添加 follow_up_max_retries 列到 auto_review_configs 表")
                 except Exception as e:
                     logger.warning(f"添加 follow_up_max_retries 列失败: {e}")
+
+            # 添加自动合并开关列
+            if 'auto_merge_enabled' not in ar_columns:
+                try:
+                    with self.engine.connect() as conn:
+                        conn.execute(text("ALTER TABLE auto_review_configs ADD COLUMN auto_merge_enabled BOOLEAN DEFAULT 0"))
+                        conn.commit()
+                    logger.info("已添加 auto_merge_enabled 列到 auto_review_configs 表")
+                except Exception as e:
+                    logger.warning(f"添加 auto_merge_enabled 列失败: {e}")
 
         # 添加 follow-up review 相关列到 processed_mrs
         if 'processed_mrs' in inspector.get_table_names():
@@ -1198,6 +1210,7 @@ class DatabaseManager:
         self,
         user_id: int,
         enabled: bool = False,
+        auto_merge_enabled: bool = False,
         interval_seconds: int = 120,
         target_creators: Optional[List[str]] = None,
         target_projects: Optional[List[str]] = None,
@@ -1224,6 +1237,7 @@ class DatabaseManager:
             if existing:
                 # 更新现有配置
                 existing.enabled = enabled
+                existing.auto_merge_enabled = auto_merge_enabled
                 existing.interval_seconds = interval_seconds
                 existing.target_creators = creators_json
                 existing.target_projects = projects_json
@@ -1242,6 +1256,7 @@ class DatabaseManager:
                 config = AutoReviewConfig(
                     user_id=user_id,
                     enabled=enabled,
+                    auto_merge_enabled=auto_merge_enabled,
                     interval_seconds=interval_seconds,
                     target_creators=creators_json,
                     target_projects=projects_json,
@@ -1293,6 +1308,7 @@ class DatabaseManager:
                 "id": config.id,
                 "user_id": config.user_id,
                 "enabled": config.enabled,
+                "auto_merge_enabled": getattr(config, "auto_merge_enabled", False),
                 "interval_seconds": config.interval_seconds,
                 "target_creators": target_creators,
                 "target_projects": target_projects,
@@ -1320,7 +1336,12 @@ class DatabaseManager:
         with self.get_session() as session:
             configs = (
                 session.query(AutoReviewConfig)
-                .filter(AutoReviewConfig.enabled == True)
+                .filter(
+                    or_(
+                        AutoReviewConfig.enabled == True,
+                        AutoReviewConfig.auto_merge_enabled == True,
+                    )
+                )
                 .all()
             )
 
@@ -1328,6 +1349,8 @@ class DatabaseManager:
             for config in configs:
                 result.append({
                     "user_id": config.user_id,
+                    "enabled": config.enabled,
+                    "auto_merge_enabled": getattr(config, "auto_merge_enabled", False),
                     "interval_seconds": config.interval_seconds,
                 })
             return result

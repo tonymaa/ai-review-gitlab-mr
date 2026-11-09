@@ -53,6 +53,7 @@ const { Text } = Typography
 // 默认自动审查配置
 const getDefaultAutoReviewConfig = (): AutoReviewConfig => ({
   enabled: false,
+  auto_merge_enabled: false,
   interval_seconds: 120,
   target_creators: [],
   target_projects: [],
@@ -581,21 +582,19 @@ const RelatedMRModal: FC<RelatedMRModalProps> = ({ open, onClose, mode = 'relate
                 </Tooltip>
               </Popconfirm>
             )}
-            {mode === 'related' && (
-              <Space>
-                {autoReviewRunning && autoReviewConfig.enabled && (
-                  <Tag color="green" icon={<CheckCircleOutlined />}>自动 Review 运行中</Tag>
-                )}
-                <Tooltip title="自动 Review 设置">
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<SettingOutlined />}
-                    onClick={() => settingsModalRef.current?.open()}
-                  />
-                </Tooltip>
-              </Space>
-            )}
+            <Space>
+              {mode === 'related' && autoReviewRunning && autoReviewConfig.enabled && (
+                <Tag color="green" icon={<CheckCircleOutlined />}>自动 Review 运行中</Tag>
+              )}
+              <Tooltip title="自动化设置">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<SettingOutlined />}
+                  onClick={() => settingsModalRef.current?.open()}
+                />
+              </Tooltip>
+            </Space>
           </div>
         }
         open={open}

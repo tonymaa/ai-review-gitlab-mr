@@ -11,6 +11,7 @@ from typing import Optional, Dict, Any
 from src.core.database import DatabaseManager
 from src.core.exceptions import AIAuthError, AIQuotaError
 from src.gitlab.client import GitLabClient
+from src.gitlab.models import MergeRequestInfo, MRState
 from src.ai.reviewer import create_reviewer
 from server.api.auto_review import update_user_task_status
 
@@ -123,8 +124,17 @@ class AutoReviewScheduler:
 
         # 获取配置并处理
         config = self.db.get_auto_review_config(user_id)
-        if config and config["enabled"]:
-            await self._process_auto_review(user_id, config)
+        if config and (
+            config.get("enabled") or config.get("auto_merge_enabled")
+        ):
+            if config.get("auto_merge_enabled"):
+                try:
+                    await self._process_auto_merge(user_id)
+                except Exception as e:
+                    logger.error(f"用户 {user_id} 自动合并任务出错: {e}", exc_info=True)
+
+            if config.get("enabled"):
+                await self._process_auto_review(user_id, config)
 
         # 清理
         self._single_run_events.pop(user_id, None)
@@ -148,8 +158,10 @@ class AutoReviewScheduler:
                 # 获取用户配置
                 config = self.db.get_auto_review_config(user_id)
 
-                if not config or not config["enabled"]:
-                    logger.debug(f"用户 {user_id} 的自动审查未启用，停止任务")
+                if not config or not (
+                    config.get("enabled") or config.get("auto_merge_enabled")
+                ):
+                    logger.debug(f"用户 {user_id} 的自动化任务未启用，停止任务")
                     break
 
                 interval = config["interval_seconds"]
@@ -158,8 +170,18 @@ class AutoReviewScheduler:
                 run_start_time = now_utc_str()
                 update_user_task_status(user_id, last_run_at=run_start_time)
 
-                # 执行一次审查
-                await self._process_auto_review(user_id, config)
+                # 自动合并当前用户创建的已批准 MR
+                if config.get("auto_merge_enabled"):
+                    try:
+                        await self._process_auto_merge(user_id)
+                    except Exception as e:
+                        logger.error(
+                            f"用户 {user_id} 自动合并任务出错: {e}", exc_info=True
+                        )
+
+                # 执行一次自动审查
+                if config.get("enabled"):
+                    await self._process_auto_review(user_id, config)
 
                 # 计算下次运行时间
                 next_run_time = now_utc()
@@ -319,6 +341,97 @@ class AutoReviewScheduler:
                     )
                 except Exception as e:
                     logger.error(f"Follow-up review 失败: {e}")
+
+    async def _process_auto_merge(self, user_id: int):
+        """自动合并当前用户创建的、已批准且可合并的 MR"""
+        gitlab_config = self.db.get_gitlab_config(user_id)
+        if not gitlab_config:
+            logger.warning(f"用户 {user_id} 未配置 GitLab")
+            return
+
+        lock = self._get_processing_lock(user_id)
+        if lock.locked():
+            logger.info(f"用户 {user_id} 的自动化任务正在执行中，跳过自动合并")
+            return
+
+        async with lock:
+            client = GitLabClient(
+                url=gitlab_config["url"],
+                token=gitlab_config["token"],
+            )
+
+            try:
+                merge_requests = client.list_all_merge_requests_authored_by_me(
+                    state="opened"
+                )
+            except Exception as e:
+                logger.error(f"获取用户 {user_id} 创建的 MR 列表失败: {e}")
+                return
+
+            for mr_info, project_info in merge_requests:
+                project_name = (
+                    getattr(project_info, "path_with_namespace", None)
+                    or mr_info.project_id
+                )
+
+                if mr_info.state != MRState.OPENED:
+                    continue
+
+                if not self._is_mr_approved(mr_info):
+                    continue
+
+                if not self._is_mr_mergeable(mr_info):
+                    logger.debug(
+                        f"MR {project_name}!{mr_info.iid} 已批准但暂不可合并: "
+                        f"{getattr(mr_info, 'detailed_merge_status', None) or mr_info.merge_status}"
+                    )
+                    continue
+
+                try:
+                    merged = client.accept_merge_request(
+                        project_id=mr_info.project_id,
+                        mr_iid=mr_info.iid,
+                        should_remove_source_branch=False,
+                    )
+                    if merged:
+                        logger.info(
+                            f"已自动合并用户 {user_id} 创建的 MR "
+                            f"{project_name}!{mr_info.iid} - {mr_info.title}"
+                        )
+                    else:
+                        logger.warning(
+                            f"自动合并 MR {project_name}!{mr_info.iid} 失败"
+                            "（可能不满足合并条件）"
+                        )
+                except Exception as e:
+                    logger.error(
+                        f"自动合并 MR {project_name}!{mr_info.iid} 异常: {e}"
+                    )
+
+    def _is_mr_approved(self, mr_info: MergeRequestInfo) -> bool:
+        """判断 MR 是否已获得足够批准（要求至少一个真实批准者）"""
+        if not getattr(mr_info, "approved_by", None):
+            return False
+        if not getattr(mr_info, "is_approved", False):
+            return False
+        approvals_left = getattr(mr_info, "approvals_left", None)
+        return approvals_left is None or approvals_left == 0
+
+    def _is_mr_mergeable(self, mr_info: MergeRequestInfo) -> bool:
+        """判断 MR 当前是否可安全调用合并接口"""
+        if getattr(mr_info, "has_conflicts", False):
+            return False
+        if getattr(mr_info, "work_in_progress", False) or getattr(
+            mr_info, "draft", False
+        ):
+            return False
+        if not getattr(mr_info, "blocking_discussions_resolved", True):
+            return False
+
+        detailed_status = getattr(mr_info, "detailed_merge_status", None)
+        if detailed_status:
+            return detailed_status == "mergeable"
+        return getattr(mr_info, "merge_status", None) == "can_be_merged"
 
     async def _review_and_approve_mr(
         self, client: GitLabClient, mr, user_id: int,
