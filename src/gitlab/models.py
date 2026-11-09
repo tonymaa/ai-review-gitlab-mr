@@ -72,6 +72,9 @@ class MergeRequestInfo:
     user_notes_count: int = 0
     approved_by_current_user: bool = False
     approved_by: List[GitLabUser] = field(default_factory=list)
+    is_approved: bool = False
+    approvals_left: Optional[int] = None
+    approvals_required: Optional[int] = None
 
     # 链接
     web_url: Optional[str] = None
@@ -89,7 +92,9 @@ class MergeRequestInfo:
 
     # 合并状态
     merge_status: Optional[str] = None  # can_be_merged, cannot_be_merged, checking, unchecked
+    detailed_merge_status: Optional[str] = None  # mergeable, not_approved, conflict, ...
     can_merge: bool = False
+    draft: bool = False
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "MergeRequestInfo":
@@ -139,6 +144,7 @@ class MergeRequestInfo:
             deletions=data.get("deletions", 0),
             changed_files=data.get("changed_files", 0),
             user_notes_count=data.get("user_notes_count", 0),
+            is_approved=bool(data.get("approved", False)),
             web_url=data.get("web_url"),
             diff_refs=data.get("diff_refs"),
             labels=data.get("labels", []),
@@ -146,10 +152,12 @@ class MergeRequestInfo:
             work_in_progress=data.get("work_in_progress", False),
             merge_when_pipeline_succeeds=data.get("merge_when_pipeline_succeeds", False),
             has_conflicts=data.get("has_conflicts", False),
+            draft=data.get("draft", False),
             blocking_discussions_resolved=data.get(
                 "blocking_discussions_resolved", True
             ),
             merge_status=data.get("merge_status"),
+            detailed_merge_status=data.get("detailed_merge_status"),
             can_merge=data.get("can_merge", False) or data.get("merge_status") == "can_be_merged",
         )
 

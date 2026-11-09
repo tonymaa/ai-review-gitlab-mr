@@ -556,6 +556,7 @@ class APIClient {
  */
 export interface AutoReviewConfig {
   enabled: boolean;
+  auto_merge_enabled: boolean;
   interval_seconds: number;
   target_creators: string[];
   target_projects: string[];

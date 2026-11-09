@@ -72,6 +72,7 @@ def get_current_user_id(
 class AutoReviewConfigRequest(BaseModel):
     """自动审查配置请求"""
     enabled: bool = Field(default=False, description="是否启用自动审查")
+    auto_merge_enabled: bool = Field(default=False, description="是否自动合并我创建的已批准 MR")
     interval_seconds: int = Field(default=120, ge=10, le=3600, description="检查间隔（秒）")
     target_creators: List[str] = Field(default_factory=list, description="MR创建者用户名列表")
     target_projects: List[str] = Field(default_factory=list, description="目标项目ID列表")
@@ -83,6 +84,7 @@ class AutoReviewConfigRequest(BaseModel):
 class AutoReviewConfigResponse(BaseModel):
     """自动审查配置响应"""
     enabled: bool
+    auto_merge_enabled: bool = False
     interval_seconds: int
     target_creators: List[str]
     target_projects: List[str]
@@ -146,6 +148,7 @@ async def get_auto_review_config(
     if not config:
         config = {
             "enabled": False,
+            "auto_merge_enabled": False,
             "interval_seconds": 120,
             "target_creators": [],
             "target_projects": [],
@@ -176,6 +179,7 @@ async def update_auto_review_config(
     db.upsert_auto_review_config(
         user_id=user_id,
         enabled=request.enabled,
+        auto_merge_enabled=request.auto_merge_enabled,
         interval_seconds=request.interval_seconds,
         target_creators=request.target_creators,
         target_projects=request.target_projects,
@@ -184,25 +188,29 @@ async def update_auto_review_config(
         add_as_comment=request.add_as_comment,
     )
 
-    logger.info(f"用户 {user_id} 更新了自动审查配置: enabled={request.enabled}")
+    logger.info(
+        f"用户 {user_id} 更新了自动化配置: "
+        f"enabled={request.enabled}, auto_merge_enabled={request.auto_merge_enabled}"
+    )
 
     # 获取调度器
     scheduler = getattr(get_db().engine, "auto_review_scheduler", None)
     if scheduler:
-        if request.enabled:
+        should_run = request.enabled or request.auto_merge_enabled
+        if should_run:
             # 检查任务是否已在运行
             if user_id in scheduler._tasks and not scheduler._tasks[user_id].done():
                 # 任务已在运行，需要重启以应用新配置
                 await scheduler.restart_user_task(user_id, request.interval_seconds)
-                logger.info(f"用户 {user_id} 的自动审查任务已重启")
+                logger.info(f"用户 {user_id} 的自动化任务已重启")
             else:
                 # 任务未运行，直接启动
                 await scheduler.start_user_task(user_id)
-                logger.info(f"用户 {user_id} 的自动审查任务已启动")
+                logger.info(f"用户 {user_id} 的自动化任务已启动")
         else:
             # 禁用，停止任务
             await scheduler.stop_user_task(user_id)
-            logger.info(f"用户 {user_id} 的自动审查任务已停止")
+            logger.info(f"用户 {user_id} 的自动化任务已停止")
 
     return {"status": "ok", "message": "配置已更新"}
 
@@ -220,7 +228,9 @@ async def get_auto_review_status(
     processed_count = db.get_processed_mr_count(user_id)
 
     return AutoReviewStatusResponse(
-        is_enabled=config["enabled"] if config else False,
+        is_enabled=bool(
+            config and (config["enabled"] or config.get("auto_merge_enabled"))
+        ),
         is_running=task_status["is_running"],
         last_run_at=task_status["last_run_at"],
         next_run_at=task_status["next_run_at"],
@@ -234,10 +244,12 @@ async def run_auto_review_now(
     user_id: int = Depends(get_current_user_id),
     db: DatabaseManager = Depends(get_db),
 ):
-    """立即执行一次自动审查"""
+    """立即执行一次自动化任务"""
     config = db.get_auto_review_config(user_id)
-    if not config or not config["enabled"]:
-        raise HTTPException(status_code=400, detail="自动审查未启用")
+    if not config or not (
+        config.get("enabled") or config.get("auto_merge_enabled")
+    ):
+        raise HTTPException(status_code=400, detail="自动化任务未启用")
 
     # 获取调度器并触发一次运行
     scheduler = getattr(get_db().engine, "auto_review_scheduler", None)
@@ -247,7 +259,7 @@ async def run_auto_review_now(
     # 在后台执行
     background_tasks.add_task(scheduler.trigger_single_run, user_id)
 
-    return {"status": "ok", "message": "已触发自动审查任务"}
+    return {"status": "ok", "message": "已触发自动化任务"}
 
 
 # ==================== 已处理 MR 历史记录 ====================

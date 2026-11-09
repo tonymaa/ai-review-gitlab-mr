@@ -17,6 +17,7 @@ export interface AutoReviewSettingsModalRef {
 // 默认配置
 export const getDefaultAutoReviewConfig = (): AutoReviewConfig => ({
   enabled: false,
+  auto_merge_enabled: false,
   target_creators: [],
   interval_seconds: 120,
   target_projects: [],
@@ -127,7 +128,7 @@ export const AutoReviewSettingsModal = forwardRef<AutoReviewSettingsModalRef, Au
         <AntModal
           title={
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginRight: '30px' }}>
-              <span>自动 Review 并批准设置</span>
+              <span>自动 Review / 合并设置</span>
               <Button
                 type="link"
                 size="small"
@@ -156,7 +157,11 @@ export const AutoReviewSettingsModal = forwardRef<AutoReviewSettingsModalRef, Au
           {(config.is_running || config.last_run_at || config.next_run_at) && (
             <div style={{ marginBottom: 16, padding: 12, background: '#5f5f5f', borderRadius: 4 }}>
               <Space size={4} style={{ width: '100%' }} vertical>
-                {config.is_running && <Tag color="green">运行中</Tag>}
+                {config.is_running && (
+                  <Tag color="green">
+                    {config.enabled ? '运行中' : '自动合并运行中'}
+                  </Tag>
+                )}
                 {config.last_run_at && (
                   <div style={{ fontSize: 12, color: '#cecece' }}>
                     上次运行: {new Date(config.last_run_at).toLocaleString('zh-CN')}
@@ -180,21 +185,34 @@ export const AutoReviewSettingsModal = forwardRef<AutoReviewSettingsModalRef, Au
           </Form.Item>
 
           <Form.Item
-            label="MR 创建者"
-            name="target_creators"
-            tooltip="只自动处理这些用户创建的 MR"
-            rules={[{ required: true, message: '请选择至少一个用户' }]}
+            noStyle
+            shouldUpdate={(prevValues, currentValues) =>
+              prevValues.enabled !== currentValues.enabled
+            }
           >
-            <Select
-              mode="multiple"
-              placeholder="选择用户"
-              loading={loadingUsers}
-              options={availableUsers.map(user => ({ label: user, value: user }))}
-              showSearch
-              filterOption={(input, option) =>
-                (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-              }
-            />
+            {({ getFieldValue }) => (
+              <Form.Item
+                label="MR 创建者"
+                name="target_creators"
+                tooltip="只自动处理这些用户创建的 MR"
+                rules={
+                  getFieldValue('enabled')
+                    ? [{ required: true, message: '请选择至少一个用户' }]
+                    : []
+                }
+              >
+                <Select
+                  mode="multiple"
+                  placeholder="选择用户"
+                  loading={loadingUsers}
+                  options={availableUsers.map(user => ({ label: user, value: user }))}
+                  showSearch
+                  filterOption={(input, option) =>
+                    (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                  }
+                />
+              </Form.Item>
+            )}
           </Form.Item>
 
           <Form.Item
@@ -259,6 +277,17 @@ export const AutoReviewSettingsModal = forwardRef<AutoReviewSettingsModalRef, Au
             }
           </Form.Item>
 
+          <Divider orientation="left" plain>自动合并设置</Divider>
+
+          <Form.Item
+            label="自动合并我创建的已批准 MR"
+            name="auto_merge_enabled"
+            valuePropName="checked"
+            tooltip="当由当前 GitLab 账号创建的 MR 至少获得 1 个批准、审批规则全部满足且 GitLab 显示可合并时，自动执行合并（保留源分支）"
+          >
+            <Switch />
+          </Form.Item>
+
           <Divider orientation="left" plain>审查设置</Divider>
 
           <Form.Item
@@ -280,9 +309,10 @@ export const AutoReviewSettingsModal = forwardRef<AutoReviewSettingsModalRef, Au
               <li>对新的 MR 调用 AI 总结接口</li>
               <li>将 AI 总结作为评论回复到 MR</li>
               <li>根据批准模式配置自动批准</li>
+              <li>当自动合并开启时，合并由当前账号创建且已批准的 MR</li>
             </ol>
             <p style={{ marginTop: 8, color: '#faad14' }}>
-              注意：自动审查在服务器后端运行，无需保持此页面打开。
+              注意：自动审查/合并在服务器后端运行，无需保持此页面打开。
             </p>
           </div>
         </Form>

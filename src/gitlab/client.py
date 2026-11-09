@@ -392,6 +392,19 @@ class GitLabClient:
                 try:
                     if project:
                         mr_obj = project.mergerequests.get(mr.iid)
+
+                        # 以详情接口的最新数据为准，避免列表接口状态过期
+                        for attr in (
+                            "detailed_merge_status",
+                            "merge_status",
+                            "has_conflicts",
+                            "work_in_progress",
+                            "draft",
+                            "blocking_discussions_resolved",
+                        ):
+                            if hasattr(mr_obj, attr):
+                                setattr(mr_info, attr, getattr(mr_obj, attr))
+
                         approval = mr_obj.approvals.get()
                         approved_by = approval.approved_by if hasattr(approval, 'approved_by') else []
                         for approver in approved_by:
@@ -405,6 +418,10 @@ class GitLabClient:
                                     avatar_url=user_data.get('avatar_url'),
                                 )
                                 mr_info.approved_by.append(user_info)
+
+                        mr_info.approvals_left = getattr(approval, 'approvals_left', None)
+                        mr_info.approvals_required = getattr(approval, 'approvals_required', None)
+                        mr_info.is_approved = bool(getattr(approval, 'approved', False))
                                 
                 except Exception as e:
                     logger.debug(f"解析MR {mr.iid} 的approval状态失败: {e}")

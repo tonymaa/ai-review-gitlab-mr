@@ -1,6 +1,6 @@
-"""自动审查任务调度器
+"""自动化任务调度器
 
-负责管理和执行用户的自动审查任务
+负责管理和执行用户的自动化任务
 """
 
 import asyncio
@@ -11,6 +11,7 @@ from typing import Optional, Dict, Any
 from src.core.database import DatabaseManager
 from src.core.exceptions import AIAuthError, AIQuotaError
 from src.gitlab.client import GitLabClient
+from src.gitlab.models import MergeRequestInfo, MRState
 from src.ai.reviewer import create_reviewer
 from server.api.auto_review import update_user_task_status
 
@@ -39,9 +40,9 @@ class AutoReviewScheduler:
         self._lock = asyncio.Lock()  # 保护 _processing_locks 访问的锁
 
     async def start_user_task(self, user_id: int):
-        """启动用户的自动审查任务"""
+        """启动用户的自动化任务"""
         if user_id in self._tasks and not self._tasks[user_id].done():
-            logger.warning(f"用户 {user_id} 的自动审查任务已在运行")
+            logger.warning(f"用户 {user_id} 的自动化任务已在运行")
             return
 
         # 创建停止事件
@@ -51,16 +52,16 @@ class AutoReviewScheduler:
         self._tasks[user_id] = asyncio.create_task(
             self._run_user_auto_review(user_id)
         )
-        logger.info(f"已启动用户 {user_id} 的自动审查任务")
+        logger.info(f"已启动用户 {user_id} 的自动化任务")
 
         # 更新状态
         update_user_task_status(user_id, is_running=True)
 
     async def stop_user_task(self, user_id: int):
-        """停止用户的自动审查任务"""
+        """停止用户的自动化任务"""
         if user_id in self._stop_events:
             self._stop_events[user_id].set()
-            logger.info(f"已发送停止信号给用户 {user_id} 的自动审查任务")
+            logger.info(f"已发送停止信号给用户 {user_id} 的自动化任务")
 
             # 等待任务停止
             if user_id in self._tasks:
@@ -85,7 +86,7 @@ class AutoReviewScheduler:
         return self._processing_locks[user_id]
 
     async def restart_user_task(self, user_id: int, interval_seconds: int):
-        """重启用户的自动审查任务（配置更新时）"""
+        """重启用户的自动化任务（配置更新时）"""
         # 先标记为正在重启（防止其他操作干扰）
         old_task = self._tasks.get(user_id)
         old_stop_event = self._stop_events.get(user_id)
@@ -114,7 +115,7 @@ class AutoReviewScheduler:
         self._tasks[user_id] = asyncio.create_task(
             self._run_user_auto_review(user_id)
         )
-        logger.info(f"已重启用户 {user_id} 的自动审查任务")
+        logger.info(f"已重启用户 {user_id} 的自动化任务")
 
     async def trigger_single_run(self, user_id: int):
         """触发单次运行（不启动定时任务）"""
@@ -123,8 +124,8 @@ class AutoReviewScheduler:
 
         # 获取配置并处理
         config = self.db.get_auto_review_config(user_id)
-        if config and config["enabled"]:
-            await self._process_auto_review(user_id, config)
+        if config and (config.get("enabled") or config.get("auto_merge_enabled")):
+            await self._process_cycle(user_id, config)
 
         # 清理
         self._single_run_events.pop(user_id, None)
@@ -135,21 +136,23 @@ class AutoReviewScheduler:
             await self.stop_user_task(user_id)
 
     async def _run_user_auto_review(self, user_id: int):
-        """执行用户的自动审查循环"""
+        """执行用户的自动化循环"""
         stop_event = self._stop_events.get(user_id)
         single_run_event = self._single_run_events.get(user_id)
         if not stop_event:
             return
 
-        logger.info(f"用户 {user_id} 的自动审查任务开始运行")
+        logger.info(f"用户 {user_id} 的自动化任务开始运行")
 
         while not stop_event.is_set():
             try:
                 # 获取用户配置
                 config = self.db.get_auto_review_config(user_id)
 
-                if not config or not config["enabled"]:
-                    logger.debug(f"用户 {user_id} 的自动审查未启用，停止任务")
+                if not config or not (
+                    config.get("enabled") or config.get("auto_merge_enabled")
+                ):
+                    logger.debug(f"用户 {user_id} 的自动化任务未启用，停止任务")
                     break
 
                 interval = config["interval_seconds"]
@@ -158,8 +161,8 @@ class AutoReviewScheduler:
                 run_start_time = now_utc_str()
                 update_user_task_status(user_id, last_run_at=run_start_time)
 
-                # 执行一次审查
-                await self._process_auto_review(user_id, config)
+                # 执行一次自动化周期
+                await self._process_cycle(user_id, config)
 
                 # 计算下次运行时间
                 next_run_time = now_utc()
@@ -178,44 +181,59 @@ class AutoReviewScheduler:
                     continue  # 超时，继续下一次循环
 
             except Exception as e:
-                logger.error(f"用户 {user_id} 自动审查任务出错: {e}", exc_info=True)
+                logger.error(f"用户 {user_id} 自动化任务出错: {e}", exc_info=True)
                 # 出错后等待一段时间再重试
                 try:
                     await asyncio.wait_for(stop_event.wait(), timeout=60)
                 except asyncio.TimeoutError:
                     continue
 
-        logger.info(f"用户 {user_id} 的自动审查任务已停止")
+        logger.info(f"用户 {user_id} 的自动化任务已停止")
         update_user_task_status(user_id, is_running=False, next_run_at=None)
 
-    async def _process_auto_review(self, user_id: int, config: Dict[str, Any]):
-        """处理一次自动审查"""
-        # 获取处理锁，防止同一用户的多次审查同时执行
+    async def _process_cycle(self, user_id: int, config: Dict[str, Any]):
+        """执行一次自动化周期：自动合并 + 自动审查"""
+        # 获取处理锁，防止同一用户的多次任务同时执行
         lock = self._get_processing_lock(user_id)
 
         if lock.locked():
-            logger.info(f"用户 {user_id} 的自动审查正在执行中，跳过本次")
+            logger.info(f"用户 {user_id} 的自动化任务正在执行中，跳过本次")
             return
 
         async with lock:
-            logger.info(f"开始处理用户 {user_id} 的自动审查")
+            # 获取用户的 GitLab 配置
+            gitlab_config = self.db.get_gitlab_config(user_id)
+            if not gitlab_config:
+                logger.warning(f"用户 {user_id} 未配置 GitLab")
+                return
 
-        # 获取用户的 GitLab 配置
-        gitlab_config = self.db.get_gitlab_config(user_id)
-        if not gitlab_config:
-            logger.warning(f"用户 {user_id} 未配置 GitLab")
-            return
+            client = GitLabClient(
+                url=gitlab_config["url"],
+                token=gitlab_config["token"],
+            )
+
+            # 自动合并当前用户创建的已批准 MR
+            if config.get("auto_merge_enabled"):
+                try:
+                    await self._process_auto_merge(client, user_id)
+                except Exception as e:
+                    logger.error(f"用户 {user_id} 自动合并任务出错: {e}", exc_info=True)
+
+            # 自动审查与批准
+            if config.get("enabled"):
+                await self._process_auto_review(client, user_id, config)
+
+    async def _process_auto_review(
+        self, client: GitLabClient, user_id: int, config: Dict[str, Any]
+    ):
+        """处理一次自动审查"""
+        logger.info(f"开始处理用户 {user_id} 的自动审查")
 
         # 获取用户的 AI 配置
         ai_config = self.db.get_ai_config(user_id)
         if not ai_config:
             logger.warning(f"用户 {user_id} 未配置 AI")
             return
-
-        client = GitLabClient(
-            url=gitlab_config["url"],
-            token=gitlab_config["token"],
-        )
 
         # 解析目标项目列表
         target_projects = config.get("target_projects") or []
@@ -291,6 +309,74 @@ class AutoReviewScheduler:
                     )
             except Exception as e:
                 logger.error(f"处理 MR 失败: {e}")
+
+    async def _process_auto_merge(self, client: GitLabClient, user_id: int):
+        """自动合并当前用户创建的、已批准且可合并的 MR"""
+        try:
+            merge_requests = client.list_all_merge_requests_authored_by_me(
+                state="opened"
+            )
+        except Exception as e:
+            logger.error(f"获取用户 {user_id} 创建的 MR 列表失败: {e}")
+            return
+
+        for mr_info, project_info in merge_requests:
+            project_name = getattr(project_info, "path_with_namespace", None) or mr_info.project_id
+
+            if mr_info.state != MRState.OPENED:
+                continue
+
+            if not self._is_mr_approved(mr_info):
+                continue
+
+            if not self._is_mr_mergeable(mr_info):
+                logger.debug(
+                    f"MR {project_name}!{mr_info.iid} 已批准但暂不可合并: "
+                    f"{getattr(mr_info, 'detailed_merge_status', None) or mr_info.merge_status}"
+                )
+                continue
+
+            try:
+                merged = client.accept_merge_request(
+                    project_id=mr_info.project_id,
+                    mr_iid=mr_info.iid,
+                    should_remove_source_branch=False,
+                )
+                if merged:
+                    logger.info(
+                        f"已自动合并用户 {user_id} 创建的 MR "
+                        f"{project_name}!{mr_info.iid} - {mr_info.title}"
+                    )
+                else:
+                    logger.warning(
+                        f"自动合并 MR {project_name}!{mr_info.iid} 失败"
+                        "（可能不满足合并条件）"
+                    )
+            except Exception as e:
+                logger.error(f"自动合并 MR {project_name}!{mr_info.iid} 异常: {e}")
+
+    def _is_mr_approved(self, mr_info: MergeRequestInfo) -> bool:
+        """判断 MR 是否已获得足够批准（要求至少一个真实批准者）"""
+        if not getattr(mr_info, "approved_by", None):
+            return False
+        if not getattr(mr_info, "is_approved", False):
+            return False
+        approvals_left = getattr(mr_info, "approvals_left", None)
+        return approvals_left is None or approvals_left == 0
+
+    def _is_mr_mergeable(self, mr_info: MergeRequestInfo) -> bool:
+        """判断 MR 当前是否可安全调用合并接口"""
+        if getattr(mr_info, "has_conflicts", False):
+            return False
+        if getattr(mr_info, "work_in_progress", False) or getattr(mr_info, "draft", False):
+            return False
+        if not getattr(mr_info, "blocking_discussions_resolved", True):
+            return False
+
+        detailed_status = getattr(mr_info, "detailed_merge_status", None)
+        if detailed_status:
+            return detailed_status == "mergeable"
+        return getattr(mr_info, "merge_status", None) == "can_be_merged"
 
     async def _review_and_approve_mr(
         self, client: GitLabClient, mr, user_id: int,
